@@ -33,7 +33,6 @@ pub enum Token {
     LEFTBRACE,
     RIGHTBRACE,
     COMMA,
-    SLASH,
 
     // arith
     PLUS,
@@ -56,6 +55,8 @@ pub enum Token {
     NUMBER {value: f64},
     NAME {value: String},
     STRING {value: String},
+
+    LINEFEED,
 
     EOF,
 }
@@ -93,7 +94,6 @@ impl fmt::Display for Token {
             LEFTBRACE => write!(f, "{{"),
             RIGHTBRACE => write!(f, "}}"),
             COMMA => write!(f, ","),
-            SLASH => write!(f, "\\"),
 
             PLUS => write!(f, "+"),
             MINUS => write!(f, "-"),
@@ -115,6 +115,7 @@ impl fmt::Display for Token {
             NAME {value} => write!(f, "{}", value),
             STRING {value} => write!(f, "'{}'", value),
 
+            LINEFEED => write!(f, "LINEFEED"),
             EOF => write!(f, "EOF"),
         } 
     }
