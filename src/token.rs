@@ -1,6 +1,8 @@
 use core::fmt;
 
+
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Token {
     // keywords
     AND,

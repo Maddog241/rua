@@ -1,6 +1,6 @@
 use std::{fs::read, process::exit};
 
-use crate::{lexer::Lexer, token::Token};
+use crate::{lexer::{Lexer, LexError}, token::Token};
 
 pub struct Rua {
     source: Vec<u8>,
@@ -24,9 +24,9 @@ impl Rua {
         }
     }
 
-    pub fn lex(&self) -> Vec<Token> {
+    pub fn lex(&self) -> Result<Vec<Token>, LexError> {
         let mut lexer = Lexer::new(&self.source);
 
-        lexer.lex().unwrap()
+        lexer.lex()
     }
 }

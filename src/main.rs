@@ -16,7 +16,17 @@ fn main() {
     }
 
     let program = Rua::new(&args[1]);
-    program.lex();
+
+
+    match program.lex() {
+        Ok(tokens) => {
+            for token in tokens.iter() {
+                println!("{}", token);
+            }
+        },
+        Err(e) => println!("Err: {:?}", e),
+    }
+
 }
 
 #[allow(dead_code)]
