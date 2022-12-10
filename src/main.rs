@@ -1,3 +1,4 @@
+mod expr;
 mod lexer;
 mod parser;
 mod rua;
@@ -18,11 +19,7 @@ fn main() {
     let program = Rua::new(&args[1]);
 
     match program.lex() {
-        Ok(tokens) => {
-            for token in tokens.iter() {
-                eprint!("{} ", token);
-            }
-        }
+        Ok(tokens) => program.parse(tokens),
         Err(e) => e.report(&args[1]),
     }
 }

@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{token::{Token, TokenType}, rua::RuaError};
+use crate::{
+    rua::RuaError,
+    token::{Token, TokenType},
+};
 
 pub struct Lexer<'a> {
     source: &'a Vec<u8>,
@@ -130,7 +133,10 @@ impl<'a> Lexer<'a> {
                         tokens.push(Token::new(self.line, TokenType::DOTDOT));
                         self.advance(2);
                     } else {
-                        return Err(LexError::new(self.line, String::from("unexpected symbol '.'")));
+                        return Err(LexError::new(
+                            self.line,
+                            String::from("unexpected symbol '.'"),
+                        ));
                     }
                 }
 
@@ -148,7 +154,10 @@ impl<'a> Lexer<'a> {
                         tokens.push(Token::new(self.line, TokenType::NOTEQUAL));
                         self.advance(2);
                     } else {
-                        return Err(LexError::new(self.line, String::from("invalid character '~'")));
+                        return Err(LexError::new(
+                            self.line,
+                            String::from("invalid character '~'"),
+                        ));
                     }
                 }
                 b'>' => {
@@ -196,10 +205,10 @@ impl<'a> Lexer<'a> {
                     } else if Self::is_alpha_or_underscore(self.source[self.current]) {
                         tokens.push(self.lex_keyword_or_identifier().unwrap())
                     } else {
-                        return Err(LexError::new(self.line, format!(
-                            "unexpected symbol {}",
-                            self.source[self.current] as char
-                        )));
+                        return Err(LexError::new(
+                            self.line,
+                            format!("unexpected symbol {}", self.source[self.current] as char),
+                        ));
                     }
                 }
             }
@@ -255,9 +264,13 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Ok(Token::new(self.line, TokenType::STRING {
-            value: String::from_utf8(self.source[start+1..self.current-1].to_vec()).unwrap(),
-        }))
+        Ok(Token::new(
+            self.line,
+            TokenType::STRING {
+                value: String::from_utf8(self.source[start + 1..self.current - 1].to_vec())
+                    .unwrap(),
+            },
+        ))
     }
 
     fn lex_long_string(&mut self) -> Result<Token, LexError> {
@@ -270,16 +283,24 @@ impl<'a> Lexer<'a> {
                 {
                     self.advance(2);
                 } else {
-                    return Err(LexError::new(self.line, String::from("invalid escape character")));
+                    return Err(LexError::new(
+                        self.line,
+                        String::from("invalid escape character"),
+                    ));
                 }
             } else if self.source[self.current] == b']' {
                 // check end of string
                 if let Some(b']') = self.look_ahead() {
                     self.advance(2);
-                    return Ok(Token::new(self.line, TokenType::STRING {
-                        value: String::from_utf8(self.source[start + 2..self.current - 2].to_vec())
+                    return Ok(Token::new(
+                        self.line,
+                        TokenType::STRING {
+                            value: String::from_utf8(
+                                self.source[start + 2..self.current - 2].to_vec(),
+                            )
                             .unwrap(),
-                    }));
+                        },
+                    ));
                 }
             } else {
                 if self.source[self.current] == b'\n' {
@@ -290,7 +311,10 @@ impl<'a> Lexer<'a> {
         }
 
         // unterminated string
-        Err(LexError::new(self.line, String::from("unterminated string")))
+        Err(LexError::new(
+            self.line,
+            String::from("unterminated string"),
+        ))
     }
 
     // returns None if this is not a long comment. Otherwise, returns Some(res).
@@ -337,9 +361,10 @@ impl<'a> Lexer<'a> {
         if closed {
             Some(Ok(()))
         } else {
-            Some(Err(LexError::new(self.line, format!(
-                "unfinished long comment (starting at line {})", start
-            ))))
+            Some(Err(LexError::new(
+                self.line,
+                format!("unfinished long comment (starting at line {})", start),
+            )))
         }
     }
 
@@ -390,7 +415,6 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
-
 
         let num_str = String::from_utf8(self.source[start..self.current].to_vec()).unwrap();
         match num_str.parse::<f64>() {

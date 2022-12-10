@@ -2,6 +2,7 @@ use std::{fs::read, process::exit};
 
 use crate::{
     lexer::{LexError, Lexer},
+    parser::Parser,
     token::Token,
 };
 
@@ -12,7 +13,7 @@ pub struct Rua {
 impl Rua {
     pub fn new(filename: &str) -> Self {
         let source = read(filename);
-        
+
         match source {
             Ok(source) => {
                 // execute the code
@@ -29,6 +30,11 @@ impl Rua {
         let mut lexer = Lexer::new(&self.source);
 
         lexer.lex()
+    }
+
+    pub fn parse(&self, tokens: Vec<Token>) {
+        let mut parser = Parser::new(tokens);
+        println!("{}", parser.parse());
     }
 }
 

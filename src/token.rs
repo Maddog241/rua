@@ -1,16 +1,14 @@
 use std::fmt;
 
+#[derive(Clone)]
 pub struct Token {
-    tok_type: TokenType,
+    pub tok_type: TokenType,
     line: usize,
 }
 
 impl Token {
     pub fn new(line: usize, tok_type: TokenType) -> Self {
-        Self {
-            line,
-            tok_type,
-        }
+        Self { line, tok_type }
     }
 }
 
