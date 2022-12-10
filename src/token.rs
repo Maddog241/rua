@@ -1,9 +1,28 @@
-use core::fmt;
+use std::fmt;
 
+pub struct Token {
+    tok_type: TokenType,
+    line: usize,
+}
+
+impl Token {
+    pub fn new(line: usize, tok_type: TokenType) -> Self {
+        Self {
+            line,
+            tok_type,
+        }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.line, self.tok_type)
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone)]
-pub enum Token {
+pub enum TokenType {
     // keywords
     AND,
     OR,
@@ -44,6 +63,7 @@ pub enum Token {
     MOD,
     POW,
     DIVNOREMAIN,
+    DOTDOT,
 
     EQUAL,
     EQUALEQUAL,
@@ -54,18 +74,18 @@ pub enum Token {
     LESSEQUAL,
 
     // types
-    NUMBER {value: f64},
-    NAME {value: String},
-    STRING {value: String},
+    NUMBER { value: f64 },
+    NAME { value: String },
+    STRING { value: String },
 
     LINEFEED,
 
     EOF,
 }
 
-impl fmt::Display for Token {
+impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Token::*;
+        use TokenType::*;
         match self {
             AND => write!(f, "and"),
             OR => write!(f, "or"),
@@ -104,6 +124,7 @@ impl fmt::Display for Token {
             MOD => write!(f, "%"),
             POW => write!(f, "^"),
             DIVNOREMAIN => write!(f, "//"),
+            DOTDOT => write!(f, ".."),
 
             EQUAL => write!(f, "="),
             EQUALEQUAL => write!(f, "=="),
@@ -113,12 +134,12 @@ impl fmt::Display for Token {
             GREATEREQUAL => write!(f, ">="),
             LESSEQUAL => write!(f, "<="),
 
-            NUMBER {value} => write!(f, "{}", *value),
-            NAME {value} => write!(f, "{}", value),
-            STRING {value} => write!(f, "'{}'", value),
+            NUMBER { value } => write!(f, "{}", *value),
+            NAME { value } => write!(f, "{}", value),
+            STRING { value } => write!(f, "\"{}\"", value),
 
             LINEFEED => write!(f, "LINEFEED"),
             EOF => write!(f, "EOF"),
-        } 
+        }
     }
 }

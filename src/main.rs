@@ -1,12 +1,12 @@
-mod rua;
-mod token;
 mod lexer;
 mod parser;
+mod rua;
+mod token;
 
-use std::{env, process::exit, io};
 use std::io::Write;
+use std::{env, io, process::exit};
 
-use rua::Rua;
+use rua::{Rua, RuaError};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,16 +17,14 @@ fn main() {
 
     let program = Rua::new(&args[1]);
 
-
     match program.lex() {
         Ok(tokens) => {
             for token in tokens.iter() {
-                println!("{}", token);
+                eprint!("{} ", token);
             }
-        },
-        Err(e) => println!("Err: {:?}", e),
+        }
+        Err(e) => e.report(&args[1]),
     }
-
 }
 
 #[allow(dead_code)]
