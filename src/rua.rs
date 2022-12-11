@@ -34,7 +34,9 @@ impl Rua {
 
     pub fn parse(&self, tokens: Vec<Token>) {
         let mut parser = Parser::new(tokens);
-        println!("{}", parser.parse());
+        for stmt in parser.parse().iter() {
+            println!("{}", stmt);
+        }
     }
 }
 

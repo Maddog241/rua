@@ -141,3 +141,81 @@ impl fmt::Display for TokenType {
         }
     }
 }
+
+impl PartialEq for TokenType {
+    fn eq(&self, other: &Self) -> bool {
+        use TokenType::*;
+        match (self, other) {
+            (AND, AND) |
+            (OR, OR) |
+            (IF, IF) |
+            (THEN, THEN) |
+            (ELSE, ELSE) |
+            (ELSEIF, ELSEIF) |
+            (WHILE, WHILE) |
+            (FOR, FOR) |
+            (DO, DO) |
+            (END, END) |
+            (BREAK, BREAK) |
+            (LOCAL, LOCAL) |
+            (TRUE, TRUE) |
+            (FALSE, FALSE) |
+            (IN, IN) |
+            (NOT, NOT) |
+            (FUNCTION, FUNCTION) |
+            (NIL, NIL) |
+            (RETURN, RETURN) |
+
+            (LEFTPAREN, LEFTPAREN) |
+            (RIGHTPAREN, RIGHTPAREN) |
+            (LEFTBRACKET, LEFTBRACKET) |
+            (RIGHTBRACKET, RIGHTBRACKET) |
+            (DOUBLELEFTBRACKET, DOUBLELEFTBRACKET) |
+            (DOUBLERIGHTBRACKET, DOUBLERIGHTBRACKET) |
+            (LEFTBRACE, LEFTBRACE) |
+            (RIGHTBRACE, RIGHTBRACE) |
+            (COMMA, COMMA) |
+
+            (PLUS, PLUS)  |
+            (MINUS, MINUS)  |
+            (MUL, MUL) |
+            (DIV, DIV) |
+            (MOD, MOD) |
+            (POW, POW) |
+            (DIVNOREMAIN, DIVNOREMAIN) |
+            (DOTDOT, DOTDOT) |
+
+            (EQUAL, EQUAL) |
+            (EQUALEQUAL, EQUALEQUAL) |
+            (NOTEQUAL, NOTEQUAL) |
+            (GREATER, GREATER) |
+            (LESS, LESS) |
+            (GREATEREQUAL, GREATEREQUAL) |
+            (LESSEQUAL, LESSEQUAL) => true,
+
+            (NUMBER { value: value1 }, NUMBER{value: value2}) => value1 == value2,
+            (NAME { value:value1 }, NAME{ value: value2}) => value1 == value2,
+            (STRING { value:value1 }, STRING{value: value2}) => value1 == value2,
+
+            (LINEFEED, LINEFEED) => true,
+            (EOF, EOF) => true,
+
+            _ => false,
+        } 
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TokenType;
+
+    #[test]
+    fn equal1() {
+        let type1 = TokenType::AND;
+        let type2 = TokenType::OR;
+        let type3 = TokenType::AND;
+
+        assert!(type1 != type2);
+        assert!(type1 == type3)
+    }
+}

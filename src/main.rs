@@ -3,6 +3,7 @@ mod lexer;
 mod parser;
 mod rua;
 mod token;
+mod stmt;
 
 use std::io::Write;
 use std::{env, io, process::exit};

@@ -1,6 +1,6 @@
 use crate::{
     expr::Expr,
-    token::{Token, TokenType::*},
+    token::{Token, TokenType::*}, stmt::Stmt,
 };
 
 pub struct Parser {
@@ -14,7 +14,37 @@ impl Parser {
     }
 
     // recursive descent parsing
-    pub fn parse(&mut self) -> Box<Expr> {
+    pub fn parse(&mut self) -> Vec<Box<Stmt>> {
+        let mut statements = Vec::new();
+
+        while !self.at_end() {
+            let stmt = self.statement();
+            statements.push(stmt);
+        }
+
+        statements
+    }
+
+    fn statement(&mut self) -> Box<Stmt> {
+        let assign = self.is_assign();
+        if assign {
+            let local = self.peek().tok_type==LOCAL;
+            if local {
+                self.advance();
+            }
+            let left = self.expression();
+            self.advance();
+            let right = self.expression();
+            self.advance();
+            Box::new(Stmt::Assignment { local, left, right} )
+        } else {
+            let expr = self.expression();
+            self.advance();
+            Box::new(Stmt::ExprStmt { expr })
+        }
+    }
+
+    fn expression(&mut self) -> Box<Expr> {
         self.logic_or()
     }
 
@@ -126,13 +156,11 @@ impl Parser {
     }
 
     fn power(&mut self) -> Box<Expr> {
-        let mut left = Box::new(Expr::Literal { value: self.peek() });
-        self.advance();
+        let mut left = self.literal();
         while self.peek_power() {
             let operator = self.peek();
             self.advance();
-            let right = Box::new(Expr::Literal { value: self.peek() });
-            self.advance();
+            let right = self.literal();
             left = Box::new(Expr::Binary {
                 left,
                 operator,
@@ -141,6 +169,19 @@ impl Parser {
         }
 
         left
+    }
+
+    fn literal(&mut self) -> Box<Expr> {
+        if self.peek().tok_type == LEFTPAREN {
+            self.advance();
+            let expr = self.expression();
+            self.advance();
+            Box::new(Expr::Grouping { expr })
+        } else {
+            let value = self.peek();
+            self.advance();
+            Box::new(Expr::Literal { value })
+        }
     }
 
     fn at_end(&self) -> bool {
@@ -241,5 +282,17 @@ impl Parser {
             POW => true,
             _ => false,
         }
+    }
+
+    fn is_assign(&self) -> bool {
+        let mut index = self.current;
+        while index < self.tokens.len() && self.tokens[index].tok_type != LINEFEED {
+            if self.tokens[index].tok_type == EQUAL {
+                return true;
+            }
+            index += 1;
+        }
+
+        false
     }
 }
