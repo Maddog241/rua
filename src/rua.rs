@@ -2,7 +2,7 @@ use std::{fs::read, process::exit};
 
 use crate::{
     lexer::{LexError, Lexer},
-    parser::Parser,
+    parser::{Parser, ParseError, Chunk},
     token::Token,
 };
 
@@ -32,11 +32,10 @@ impl Rua {
         lexer.lex()
     }
 
-    pub fn parse(&self, tokens: Vec<Token>) {
+
+    pub fn parse(&self, tokens: Vec<Token>) -> Result<Chunk, ParseError> {
         let mut parser = Parser::new(tokens);
-        for stmt in parser.parse().iter() {
-            println!("{}", stmt);
-        }
+        parser.parse()
     }
 }
 

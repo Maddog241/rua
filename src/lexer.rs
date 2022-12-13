@@ -113,7 +113,7 @@ impl<'a> Lexer<'a> {
                 }
                 b'/' => {
                     if let Some(b'/') = self.look_ahead() {
-                        tokens.push(Token::new(self.line, TokenType::DIVNOREMAIN));
+                        tokens.push(Token::new(self.line, TokenType::FLOORDIV));
                         self.advance(2);
                     } else {
                         tokens.push(Token::new(self.line, TokenType::DIV));
@@ -138,6 +138,10 @@ impl<'a> Lexer<'a> {
                             String::from("unexpected symbol '.'"),
                         ));
                     }
+                }
+                b';' => {
+                    tokens.push(Token::new(self.line, TokenType::SEMICOLON));
+                    self.advance(1);
                 }
 
                 b'=' => {
@@ -190,7 +194,6 @@ impl<'a> Lexer<'a> {
                     self.advance(1);
                 }
                 b'\n' => {
-                    tokens.push(Token::new(self.line, TokenType::LINEFEED));
                     self.line += 1;
                     self.advance(1);
                 }

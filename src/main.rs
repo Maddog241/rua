@@ -1,9 +1,7 @@
-mod expr;
 mod lexer;
 mod parser;
 mod rua;
 mod token;
-mod stmt;
 
 use std::io::Write;
 use std::{env, io, process::exit};
@@ -20,7 +18,16 @@ fn main() {
     let program = Rua::new(&args[1]);
 
     match program.lex() {
-        Ok(tokens) => program.parse(tokens),
+        Ok(tokens) => {
+            match program.parse(tokens) {
+                Ok(chunk) => {
+                    println!("{}", chunk);
+                },
+                Err(e) => {
+                    e.report(&args[1]);
+                }
+            }
+        },
         Err(e) => e.report(&args[1]),
     }
 }
