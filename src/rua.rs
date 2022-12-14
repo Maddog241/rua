@@ -2,8 +2,8 @@ use std::{fs::read, process::exit};
 
 use crate::{
     lexer::{LexError, Lexer},
-    parser::{Parser, ParseError, Chunk},
-    token::Token,
+    parser::{Parser, ParseError},
+    token::Token, ast::Chunk,
 };
 
 pub struct Rua {

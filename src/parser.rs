@@ -1,12 +1,11 @@
-use std::fmt;
-
 use crate::{
-    token::{Token, TokenType::*}, rua::RuaError,
+    token::{Token, TokenType::{*, self}}, rua::RuaError, ast::{Chunk, Block, Stmt, NameList, Name, Exp, ExpList},
 };
 
 pub struct Parser {
     tokens: Vec<Token>,
     current: usize,
+    line: usize,
 }
 
 pub struct ParseError {
@@ -31,7 +30,7 @@ impl RuaError for ParseError {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, current: 0 }
+        Self { tokens, current: 0, line: 1 }
     }
 
     // recursive descent parsing
@@ -46,254 +45,378 @@ impl Parser {
     fn parse_block(&mut self) -> Result<Block, ParseError> {
         let mut statements = Vec::new();
 
-        while !self.at_end() {
-            match self.parse_statement() {
-                Ok(stmt) => {
-                    statements.push(stmt);
+        loop {
+            match self.peek().tok_type {
+                // simicolon 
+                SEMICOLON => {
+                    self.advance();
+                    statements.push(Stmt::Empty);
                 }
-                Err(e) => {
-                    return Err(e);
+
+                // assignment
+                NAME { value:_ } => {
+                    statements.push(self.parse_assignment(false)?)
+                },
+
+                // break
+                BREAK => {
+                    self.advance();
+                    statements.push(Stmt::Break);
+                },
+
+                // do block end
+                DO => {
+                    self.advance();
+                    let res = Stmt::DoBlockEnd { block: self.parse_block()? };
+                    self.consume(END)?;
+                    statements.push(res);
+                },
+
+                // while exp do block end 
+                WHILE => {
+                    statements.push(self.parse_while()?);
+                },
+
+                // if exp then block {elseif exp then block} {else block end}
+                IF => {
+                    statements.push(self.parse_if()?);
+                },
+
+                // for loop 
+                FOR => {
+                    statements.push(self.parse_for()?);
+                },
+
+                // return 
+                RETURN => {
+                    statements.push(self.parse_return()?);
+                },
+
+                // function Name funcbody
+                FUNCTION => {
+                    statements.push(self.parse_function_decl(false)?)
+                },
+                
+                LOCAL => {
+                    self.advance();
+                    match self.peek().tok_type {
+                        NAME { value: _ } => {
+                            statements.push(self.parse_assignment(true)?);
+                        },
+                        FUNCTION => {
+                            statements.push(self.parse_function_decl(true)?);
+                        },
+                        _ => return Err(ParseError::new(self.peek().line, format!("<name> expected after 'local'"))),
+                    }
                 }
+
+                _ => break,
             }
         }
 
-        Ok(Block {
-            statements,
-        })
-    }
-
-    fn parse_statement(&mut self) -> Result<Stmt, ParseError> {
-        match self.peek().tok_type {
-            // assignment
-            NAME { value } => {
-                self.parse_assignment(false)
-            },
-
-            // break
-            BREAK => {
-                self.advance();
-                Ok(Stmt::Break)
-            },
-
-            // do block end
-            DO => {
-                Ok(Stmt::DoBlockEnd { block: self.parse_block()? })
-            },
-
-            // while exp do block end 
-            WHILE => {
-                self.parse_while()
-            },
-
-            // if exp then block {elseif exp then block} {else block end}
-            IF => {
-                self.parse_if()
-            },
-
-            // for loop 
-            FOR => {
-                let numeric = self.is_numeric_for();
-                if numeric {
-                    // numeric for
-                    self.parse_numeric_for()
-                } else {
-                    // generic for
-                    self.parse_generic_for()
-                }
-            },
-
-            // return 
-            RETURN => {
-                self.parse_return()
-            },
-
-            // function Name funcbody
-            FUNCTION => {
-                self.parse_function_decl(false)
-            },
-            
-            LOCAL => {
-                self.advance();
-                match self.peek().tok_type {
-                    NAME { value } => {
-                        self.parse_assignment(true)
-                    },
-                    FUNCTION => {
-                        self.parse_function_decl(true)
-                    },
-                    _ => Err(ParseError::new(self.peek().line, format!("unexpected token: {}", self.peek().tok_type)))
-                }
-            }
-
-            _ => Err(ParseError::new(self.peek().line, format!("unexpected token: {}", self.peek().tok_type)))
-        }
+        Ok(Block{statements})
     }
 
     fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError>{
+        let namelist = self.parse_namelist()?;
+        // 这里有可能遇到is_end的情况
+        // 代码中很多地方都有可能遇到这种情况，多加注意
+        self.consume(EQUAL)?;
+        let explist = self.parse_explist()?;
 
+        Ok(Stmt::Assignment { local, left: namelist, right: explist })
+    }
+
+    fn parse_namelist(&mut self) -> Result<NameList, ParseError>{
+        let mut namelist = NameList(Vec::new());
+        if let NAME { value } = self.peek().tok_type {
+            namelist.0.push( Name(value));
+            self.advance();
+        } else {
+            panic!("never go to this branch");
+        }
+
+        while !self.at_end() {
+            if let COMMA = self.peek().tok_type {
+                self.advance();
+                if let NAME { value } = self.peek().tok_type {
+                    namelist.0.push(Name(value));
+                    self.advance();
+                } else {
+                    return Err(ParseError::new(self.peek().line, String::from("unexpected symbol after ','")));
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(namelist)
+    }
+
+    fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
+        let mut explist = ExpList(Vec::new());
+        
+        let exp = self.parse_expression()?;
+        explist.0.push(exp);
+
+        while let COMMA = self.peek().tok_type {
+            self.advance();
+            let exp = self.parse_expression()?;
+            explist.0.push(exp);
+        }
+
+        Ok(explist)
     }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(WHILE)?;
+        let condition = self.parse_expression()?;
+        self.consume(DO)?;
+        let body = self.parse_block()?;
+        self.consume(END)?;
 
+        Ok(Stmt::WhileStmt { condition, body})
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(IF)?;
+        let condition = self.parse_expression()?;
+        self.consume(THEN)?;
+        let then_branch = self.parse_block()?;
 
+        let mut elseif_branches = Vec::new();
+        
+        while let ELSEIF = self.peek().tok_type {
+            self.consume(ELSEIF)?;
+            let elseif_condition = self.parse_expression()?;
+            self.consume(THEN)?;
+            let elseif_branch = self.parse_block()?;
+            elseif_branches.push((elseif_condition, elseif_branch));
+        }
+
+        let option_else_branch = match self.peek().tok_type {
+            ELSE => {
+                Some(self.parse_block()?)
+            },
+
+            _ => None,
+        };
+
+        self.consume(END)?;
+
+        Ok(Stmt::IfStmt { condition, then_branch, elseif_branches, option_else_branch })
     }
 
-    fn parse_numeric_for(&mut self) -> Result<Stmt, ParseError> {
+    fn parse_for(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(FOR)?;
+        match self.peek().tok_type {
+            NAME { value } => {
+                self.advance();
+                match self.peek().tok_type {
+                    EQUAL  => {
+                        // numeric for 
+                        self.advance(); // consume the '=' token
+                        let start = self.parse_expression()?;
+                        self.consume(COMMA)?;
+                        let end = self.parse_expression()?;
 
-    }
+                        let step = match self.peek().tok_type {
+                            COMMA => {
+                                self.advance();
+                                self.parse_expression()?
+                            }
+                            _ => Exp::Literal { value: Token::new(self.line, NUMBER { value: 1.0 }) }
+                        };
 
-    fn parse_generic_for(&mut self) -> Result<Stmt, ParseError> {
+                        self.consume(DO)?;
+                        let body = self.parse_block()?;
+                        self.consume(END)?;
 
+                        Ok(Stmt::NumericFor { name: Name(value), start, end, step, body})
+                    },
+                    
+                    _ => {
+                        // generic for
+                        // get back one step!!!!!! 
+                        self.current -= 1;
+                        let namelist = self.parse_namelist()?;
+                        self.consume(IN)?;
+                        let explist = self.parse_explist()?;
+                        self.consume(DO)?;
+                        let body = self.parse_block()?;
+                        self.consume(END)?;
+
+                        Ok(Stmt::GenericFor { namelist, explist, body})
+                    }
+                }
+            }
+
+            _ => Err(ParseError::new(self.line, format!("<name> expected after 'for'")))
+        }
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
-
+        self.consume(RETURN)?;
+        let explist = self.parse_explist()?;
+        
+        Ok(Stmt::RetStmt { explist })
     }
 
     fn parse_function_decl(&mut self, local: bool) -> Result<Stmt, ParseError> {
+        self.consume(FUNCTION)?;
+        match self.peek().tok_type {
+            NAME { value } => {
+                self.consume(LEFTPAREN)?;
+                let parlist = self.parse_namelist()?;
+                self.consume(RIGHTPAREN)?;
+                let body = self.parse_block()?;
+                self.consume(END)?;
+                Ok(Stmt::FuncDecl { local, name: Name(value), parlist, body })
+            },
 
+            _ => {
+                return Err(ParseError::new(self.line, format!("<name> expected after 'function'")));
+            }
+        }
     }
 
-    fn parse_expression(&mut self) -> Box<Exp> {
+    fn parse_expression(&mut self) -> Result<Exp, ParseError> {
         self.parse_logic_or()
     }
 
-    fn parse_logic_or(&mut self) -> Box<Exp> {
-        let mut left = self.parse_logic_and();
+    fn parse_logic_or(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_logic_and()?;
         while self.peek_logic_or() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_logic_and();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_logic_and()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_logic_and(&mut self) -> Box<Exp> {
-        let mut left = self.parse_comparison();
+    fn parse_logic_and(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_comparison()?;
         while self.peek_logic_and() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_comparison();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_comparison()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_comparison(&mut self) -> Box<Exp> {
-        let mut left = self.parse_concat();
+    fn parse_comparison(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_concat()?;
         while self.peek_comparison() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_concat();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_concat()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_concat(&mut self) -> Box<Exp> {
-        let mut left = self.parse_term();
+    fn parse_concat(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_term()?;
         while self.peek_concat() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_term();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_term()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_term(&mut self) -> Box<Exp> {
-        let mut left = self.parse_factor();
+    fn parse_term(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_factor()?;
         while self.peek_term() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_factor();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_factor()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_factor(&mut self) -> Box<Exp> {
-        let mut left = self.parse_unary();
+    fn parse_factor(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_unary()?;
         while self.peek_factor() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_unary();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_unary()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Box<Exp> {
+    fn parse_unary(&mut self) -> Result<Exp, ParseError> {
         if self.peek_unary() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_unary();
-            Box::new(Exp::Unary { operator, right })
+            let right = self.parse_unary()?;
+            Ok(Exp::Unary { operator, right: Box::new(right) })
         } else {
             self.parse_power()
         }
     }
 
-    fn parse_power(&mut self) -> Box<Exp> {
-        let mut left = self.parse_literal();
+    fn parse_power(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_literal()?;
         while self.peek_power() {
             let operator = self.peek();
             self.advance();
-            let right = self.parse_literal();
-            left = Box::new(Exp::Binary {
-                left,
+            let right = self.parse_literal()?;
+            left = Exp::Binary {
+                left: Box::new(left),
                 operator,
-                right,
-            })
+                right: Box::new(right),
+            }
         }
 
-        left
+        Ok(left)
     }
 
-    fn parse_literal(&mut self) -> Box<Exp> {
+    fn parse_literal(&mut self) -> Result<Exp, ParseError> {
         if self.peek().tok_type == LEFTPAREN {
             self.advance();
-            let expr = self.parse_expression();
+            let expr = self.parse_expression()?;
             self.advance();
-            Box::new(Exp::Grouping { expr })
+            Ok(Exp::Grouping { expr: Box::new(expr) })
         } else {
             let value = self.peek();
             self.advance();
-            Box::new(Exp::Literal { value })
+            Ok(Exp::Literal { value })
         }
     }
 
@@ -302,7 +425,10 @@ impl Parser {
     }
 
     fn advance(&mut self) {
-        self.current += 1;
+        if !self.at_end()  {
+            self.current += 1;
+            self.line = self.peek().line;
+        }
     }
 
     fn peek(&self) -> Token {
@@ -397,286 +523,17 @@ impl Parser {
         }
     }
 
-    // fn is_assign(&self) -> bool {
-    //     let mut index = self.current;
-    //     while index < self.tokens.len() && self.tokens[index].tok_type != LINEFEED {
-    //         if self.tokens[index].tok_type == EQUAL {
-    //             return true;
-    //         }
-    //         index += 1;
-    //     }
-
-    //     false
-    // }
-}
-
-pub struct Chunk {
-    pub block: Block,
-}
-
-pub struct Block {
-    pub statements: Vec<Stmt>,
-}
-
-impl fmt::Display for Chunk {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.block)
-    }
-}
-
-enum Stmt {
-    Assignment {
-        local: bool,
-        left: Box<Exp>,
-        right: Box<Exp>,
-    },
-    FunctionCall {
-        name: Name,
-        explist: ExpList,
-    },
-    Break,
-    DoBlockEnd {
-        block: Block,
-    },
-    WhileStmt {
-        condition: Box<Exp>,
-        body: Block,
-    },
-    IfStmt {
-        condition: Box<Exp>,
-        then_branch: Block,
-        option_else_branch: Option<Block>,
-    },
-    NumericFor {
-        name: Name,
-        start: Exp,
-        end: Exp,
-        step: Exp,
-        body: Block,
-    },
-    GenericFor {
-        namelist: NameList,
-        explist: ExpList,
-        body: Block,
-    },
-    FuncDecl{
-        name: Name,
-        parlist: NameList,
-        body: Block, 
-    },
-    RetStmt {
-        explist: ExpList,
-    }
-}
-
-struct Name (String);
-struct NameList (Vec<Name>);
-
-struct ExpList {
-    exps: Vec<Exp>,
-}
-
-enum Exp {
-    Literal {
-        // nil, false, true, numeral, literal string
-        value: Token,
-    },
-    Unary {
-        operator: Token,
-        right: Box<Exp>,
-    },
-    Binary {
-        left: Box<Exp>,
-        operator: Token,
-        right: Box<Exp>,
-    },
-    Grouping {
-        expr: Box<Exp>,
-    },
-    FuncExp {
-        funcbody: FuncBody,
-    },
-    FunctionCall {
-        name: Name,
-        arguments: ExpList,
-        body: Block,
-    },
-    TableConstructor {
-        fieldlist: FieldList,
-    }
-}
-
-struct FuncBody {
-    parlist: NameList,
-    block: Block,
-}
-
-struct FieldList {
-    fields: Vec<Field>,
-}
-
-struct Field {
-    name: Option<Name>,
-    exp: Exp,
-}
-
-impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl fmt::Display for NameList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.0.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.0.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
-}
-
-impl fmt::Display for Block {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.statements.iter().fold(Ok(()), |result, stmt|{
-            write!(f, "{}\n", stmt)
-        })
-    }
-}
-
-impl fmt::Display for FuncBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function ({}) {}", self.parlist, self.block)
-    }
-}
-
-impl fmt::Display for Field {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.name {
-            Some(name) => {
-                write!(f, "{} = {}", name, self.exp)
-            },
-            None => {
-                write!(f, "{}", self.exp)
-            }
+    fn consume(&mut self, tok_type: TokenType) -> Result<(), ParseError> {
+        if self.at_end() {
+            return Err(ParseError::new(self.line, format!("expect {}, found EOF", tok_type)));
         }
-    }
-}
 
-impl fmt::Display for FieldList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.fields.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.fields.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
-}
-
-
-
-impl fmt::Display for Exp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Literal { value } => write!(f, "{}", value.tok_type),
-            Self::Unary { operator, right } => write!(f, "({} {})", operator.tok_type, right),
-            Self::Binary {
-                left,
-                operator,
-                right,
-            } => write!(f, "({} {} {})", left, operator.tok_type, right),
-            Self::Grouping { expr } => write!(f, "({})", expr),
-            Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments, body } => write!(f, "{}({}) {{\n{}\n}}", name, arguments, body)
-            Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
-        }
-    }
-}
-
-impl fmt::Display for ExpList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.exps.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.exps.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
-}
-
-
-
-
-impl fmt::Display for Stmt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Assignment { local, left, right } => {
-                if *local {
-                    write!(f, "Assignment: local {} = {}", left, right)
-                } else {
-                    write!(f, "Assignment: {} = {}", left, right)
-                }
-            },
-            
-            Self::FunctionCall { name, explist } => {
-                write!(f, "{}({})", name, explist)
-            },
-
-            Self::Break => {
-                write!(f, "break")
-            },
-
-            Self::DoBlockEnd { block } => {
-                write!(f, "{}", block)
-            },
-
-            Self::FuncDecl { name, parlist, body } => {
-                write!(f, "{}({}){{{}}}", name, parlist, body)
-            },
-
-            Self::IfStmt { condition, then_branch, option_else_branch } => {
-                match option_else_branch {
-                    Some(else_branch) => {
-                        write!(f, "if({}) then\n\t{}\nelse\n\t{}\nend", condition, then_branch, else_branch)
-                    },
-                    None => {
-                        write!(f, "if({}) then\n\t{}\nend", condition, then_branch)
-                    }
-                }
-            },
-
-            Self::WhileStmt { condition, body } => {
-                write!(f, "while({})\n\t{}\nend", condition, body)
-            },
-
-            Self::NumericFor { name, start, end, step, body } => {
-                write!(f, "for {}={}, {}, {} do\n\t{}\nend", name, start, end, step, body)
-            },
-
-            Self::GenericFor { namelist, explist, body } => {
-                write!(f, "for {} = {} do\n\t{}\nend", namelist, explist, body)
-            },
-
-            Self::RetStmt { explist } => {
-                write!(f, "return {}", explist)
-            }
+        if let tok_type = self.peek().tok_type {
+            self.advance();
+            Ok(())
+        } else {
+            eprintln!("do not match");
+            Err(ParseError::new(self.line, format!("expect {}, found {}", tok_type, self.peek().tok_type)))
         }
     }
 }

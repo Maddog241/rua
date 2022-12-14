@@ -1,0 +1,288 @@
+use std::fmt;
+
+use crate::token::Token;
+
+pub struct Chunk {
+    pub block: Block,
+}
+
+pub struct Block {
+    pub statements: Vec<Stmt>,
+}
+
+impl fmt::Display for Chunk {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.block)
+    }
+}
+
+pub enum Stmt {
+    Assignment {
+        local: bool,
+        left: NameList,
+        right: ExpList,
+    },
+    FunctionCall {
+        name: Name,
+        explist: ExpList,
+    },
+    Break,
+    DoBlockEnd {
+        block: Block,
+    },
+    WhileStmt {
+        condition: Exp,
+        body: Block,
+    },
+    IfStmt {
+        condition: Exp,
+        then_branch: Block,
+        elseif_branches: Vec<(Exp, Block)>,
+        option_else_branch: Option<Block>,
+    },
+    NumericFor {
+        name: Name,
+        start: Exp,
+        end: Exp,
+        step: Exp,
+        body: Block,
+    },
+    GenericFor {
+        namelist: NameList,
+        explist: ExpList,
+        body: Block,
+    },
+    FuncDecl{
+        local: bool,
+        name: Name,
+        parlist: NameList,
+        body: Block, 
+    },
+    RetStmt {
+        explist: ExpList,
+    },
+    Empty,
+}
+
+pub struct Name (pub String);
+pub struct NameList (pub Vec<Name>);
+
+pub struct ExpList(pub Vec<Exp>);
+
+pub enum Exp {
+    Literal {
+        // nil, false, true, numeral, literal string
+        value: Token,
+    },
+    Unary {
+        operator: Token,
+        right: Box<Exp>,
+    },
+    Binary {
+        left: Box<Exp>,
+        operator: Token,
+        right: Box<Exp>,
+    },
+    Grouping {
+        expr: Box<Exp>,
+    },
+    FuncExp {
+        funcbody: FuncBody,
+    },
+    FunctionCall {
+        name: Name,
+        arguments: ExpList,
+        body: Block,
+    },
+    TableConstructor {
+        fieldlist: FieldList,
+    }
+}
+
+pub struct FuncBody {
+    parlist: NameList,
+    block: Block,
+}
+
+pub struct FieldList {
+    fields: Vec<Field>,
+}
+
+pub struct Field {
+    name: Option<Name>,
+    exp: Exp,
+}
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for NameList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.0.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.0.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.statements.iter().fold(Ok(()), |result, stmt|{
+            write!(f, "{}\n", stmt)
+        })
+    }
+}
+
+impl fmt::Display for FuncBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "function ({}) {}", self.parlist, self.block)
+    }
+}
+
+impl fmt::Display for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            Some(name) => {
+                write!(f, "{} = {}", name, self.exp)
+            },
+            None => {
+                write!(f, "{}", self.exp)
+            }
+        }
+    }
+}
+
+impl fmt::Display for FieldList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.fields.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.fields.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+
+
+
+impl fmt::Display for Exp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal { value } => write!(f, "{}", value.tok_type),
+            Self::Unary { operator, right } => write!(f, "({} {})", operator.tok_type, right),
+            Self::Binary {
+                left,
+                operator,
+                right,
+            } => write!(f, "({} {} {})", left, operator.tok_type, right),
+            Self::Grouping { expr } => write!(f, "({})", expr),
+            Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
+            Self::FunctionCall { name, arguments, body } => write!(f, "{}({}) {{\n{}\n}}", name, arguments, body),
+            Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
+        }
+    }
+}
+
+impl fmt::Display for ExpList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.0.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.0.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+
+
+
+
+impl fmt::Display for Stmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Assignment { local, left, right } => {
+                if *local {
+                    write!(f, "local {} = {}", left, right)
+                } else {
+                    write!(f, "{} = {}", left, right)
+                }
+            },
+            
+            Self::FunctionCall { name, explist } => {
+                write!(f, "{}({})", name, explist)
+            },
+
+            Self::Break => {
+                write!(f, "break")
+            },
+
+            Self::DoBlockEnd { block } => {
+                write!(f, "{}", block)
+            },
+
+            Self::FuncDecl { local, name, parlist, body } => {
+                if *local {
+                    write!(f, "local {}({}){{{}}}", name, parlist, body)
+                } else {
+                    write!(f, "{}({}){{{}}}", name, parlist, body)
+                }
+            },
+
+            Self::IfStmt { condition, then_branch, elseif_branches, option_else_branch } => {
+                write!(f, "if({}) then\n\t{}\n", condition, then_branch)?;
+                for (condition, elseif_branch) in elseif_branches.iter() {
+                    write!(f, "\telseif {}\n\t{}\n", condition, elseif_branch)?;
+                }
+                        
+                match option_else_branch {
+                    Some(else_branch) => {
+                        write!(f, "else\n{}\nend\n", else_branch)
+                    },
+                    None => {
+                        write!(f, "end\n")
+                    }
+                }
+            }
+
+            Self::WhileStmt { condition, body } => {
+                write!(f, "while({})\n\t{}\nend", condition, body)
+            },
+
+            Self::NumericFor { name, start, end, step, body } => {
+                write!(f, "for {}={}, {}, {} do\n\t{}\nend", name, start, end, step, body)
+            },
+
+            Self::GenericFor { namelist, explist, body } => {
+                write!(f, "for {} = {} do\n\t{}\nend", namelist, explist, body)
+            },
+
+            Self::RetStmt { explist } => {
+                write!(f, "return {}", explist)
+            }
+
+            Self::Empty => {
+                write!(f, "")
+            }
+        }
+    }
+}

@@ -136,7 +136,6 @@ impl fmt::Display for TokenType {
             NAME { value } => write!(f, "{}", value),
             STRING { value } => write!(f, "\"{}\"", value),
 
-            LINEFEED => write!(f, "LINEFEED"),
             EOF => write!(f, "EOF"),
         }
     }
