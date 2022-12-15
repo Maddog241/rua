@@ -1,6 +1,25 @@
 use crate::{
-    token::{Token, TokenType::{*, self}}, rua::RuaError, ast::{Chunk, Block, Stmt, NameList, Name, Exp, ExpList},
+    ast::{Block, Chunk, Exp, ExpList, Field, FieldList, FuncBody, Name, NameList, Stmt},
+    rua::RuaError,
+    token::{
+        Token,
+        TokenType::{self, *},
+    },
 };
+
+macro_rules! consume {
+    ( $value: expr, $expected: pat  ) => {{
+        let tok = $value;
+        if let $expected = tok.tok_type {
+            Ok(())
+        } else {
+            Err(ParseError::new(
+                tok.line,
+                format!("unexpected token {}", tok.tok_type),
+            ))
+        }
+    }};
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -15,10 +34,7 @@ pub struct ParseError {
 
 impl ParseError {
     pub fn new(line: usize, message: String) -> Self {
-        ParseError {
-            line,
-            message,
-        }
+        ParseError { line, message }
     }
 }
 
@@ -30,7 +46,11 @@ impl RuaError for ParseError {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, current: 0, line: 1 }
+        Self {
+            tokens,
+            current: 0,
+            line: 1,
+        }
     }
 
     // recursive descent parsing
@@ -47,66 +67,74 @@ impl Parser {
 
         loop {
             match self.peek().tok_type {
-                // simicolon 
+                // simicolon
                 SEMICOLON => {
                     self.advance();
                     statements.push(Stmt::Empty);
                 }
 
                 // assignment
-                NAME { value:_ } => {
-                    statements.push(self.parse_assignment(false)?)
+                NAME { value: _ } => match self.look_ahead() {
+                    Some(LEFTPAREN) => statements.push(Stmt::FunctionCall {
+                        func_call: self.parse_function_call()?,
+                    }),
+                    _ => statements.push(self.parse_assignment(false)?),
                 },
 
                 // break
                 BREAK => {
                     self.advance();
                     statements.push(Stmt::Break);
-                },
+                }
 
                 // do block end
                 DO => {
                     self.advance();
-                    let res = Stmt::DoBlockEnd { block: self.parse_block()? };
-                    self.consume(END)?;
+                    let res = Stmt::DoBlockEnd {
+                        block: self.parse_block()?,
+                    };
+                    consume!(self.advance(), END)?;
                     statements.push(res);
-                },
+                }
 
-                // while exp do block end 
+                // while exp do block end
                 WHILE => {
                     statements.push(self.parse_while()?);
-                },
+                }
 
                 // if exp then block {elseif exp then block} {else block end}
                 IF => {
                     statements.push(self.parse_if()?);
-                },
+                }
 
-                // for loop 
+                // for loop
                 FOR => {
                     statements.push(self.parse_for()?);
-                },
+                }
 
-                // return 
+                // return
                 RETURN => {
                     statements.push(self.parse_return()?);
-                },
+                }
 
                 // function Name funcbody
-                FUNCTION => {
-                    statements.push(self.parse_function_decl(false)?)
-                },
-                
+                FUNCTION => statements.push(self.parse_function_decl(false)?),
+
                 LOCAL => {
                     self.advance();
                     match self.peek().tok_type {
                         NAME { value: _ } => {
                             statements.push(self.parse_assignment(true)?);
-                        },
+                        }
                         FUNCTION => {
                             statements.push(self.parse_function_decl(true)?);
-                        },
-                        _ => return Err(ParseError::new(self.peek().line, format!("<name> expected after 'local'"))),
+                        }
+                        _ => {
+                            return Err(ParseError::new(
+                                self.peek().line,
+                                format!("<name> expected after 'local'"),
+                            ))
+                        }
                     }
                 }
 
@@ -114,23 +142,27 @@ impl Parser {
             }
         }
 
-        Ok(Block{statements})
+        Ok(Block { statements })
     }
 
-    fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError>{
+    fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError> {
         let namelist = self.parse_namelist()?;
         // 这里有可能遇到is_end的情况
         // 代码中很多地方都有可能遇到这种情况，多加注意
-        self.consume(EQUAL)?;
+        consume!(self.advance(), EQUAL)?;
         let explist = self.parse_explist()?;
 
-        Ok(Stmt::Assignment { local, left: namelist, right: explist })
+        Ok(Stmt::Assignment {
+            local,
+            left: namelist,
+            right: explist,
+        })
     }
 
-    fn parse_namelist(&mut self) -> Result<NameList, ParseError>{
+    fn parse_namelist(&mut self) -> Result<NameList, ParseError> {
         let mut namelist = NameList(Vec::new());
         if let NAME { value } = self.peek().tok_type {
-            namelist.0.push( Name(value));
+            namelist.0.push(Name(value));
             self.advance();
         } else {
             panic!("never go to this branch");
@@ -143,7 +175,10 @@ impl Parser {
                     namelist.0.push(Name(value));
                     self.advance();
                 } else {
-                    return Err(ParseError::new(self.peek().line, String::from("unexpected symbol after ','")));
+                    return Err(ParseError::new(
+                        self.peek().line,
+                        String::from("unexpected symbol after ','"),
+                    ));
                 }
             } else {
                 break;
@@ -155,7 +190,7 @@ impl Parser {
 
     fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
         let mut explist = ExpList(Vec::new());
-        
+
         let exp = self.parse_expression()?;
         explist.0.push(exp);
 
@@ -169,55 +204,58 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
-        self.consume(WHILE)?;
+        consume!(self.advance(), WHILE)?;
         let condition = self.parse_expression()?;
-        self.consume(DO)?;
+        consume!(self.advance(), DO)?;
         let body = self.parse_block()?;
-        self.consume(END)?;
+        consume!(self.advance(), END)?;
 
-        Ok(Stmt::WhileStmt { condition, body})
+        Ok(Stmt::WhileStmt { condition, body })
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
-        self.consume(IF)?;
+        consume!(self.advance(), IF)?;
         let condition = self.parse_expression()?;
-        self.consume(THEN)?;
+        consume!(self.advance(), THEN)?;
         let then_branch = self.parse_block()?;
 
         let mut elseif_branches = Vec::new();
-        
+
         while let ELSEIF = self.peek().tok_type {
-            self.consume(ELSEIF)?;
+            consume!(self.advance(), ELSEIF)?;
             let elseif_condition = self.parse_expression()?;
-            self.consume(THEN)?;
+            consume!(self.advance(), THEN)?;
             let elseif_branch = self.parse_block()?;
             elseif_branches.push((elseif_condition, elseif_branch));
         }
 
         let option_else_branch = match self.peek().tok_type {
-            ELSE => {
-                Some(self.parse_block()?)
-            },
+            ELSE => Some(self.parse_block()?),
 
             _ => None,
         };
 
-        self.consume(END)?;
+        consume!(self.advance(), END)?;
 
-        Ok(Stmt::IfStmt { condition, then_branch, elseif_branches, option_else_branch })
+        Ok(Stmt::IfStmt {
+            condition,
+            then_branch,
+            elseif_branches,
+            option_else_branch,
+        })
     }
 
     fn parse_for(&mut self) -> Result<Stmt, ParseError> {
-        self.consume(FOR)?;
+        consume!(self.advance(), FOR)?;
         match self.peek().tok_type {
             NAME { value } => {
                 self.advance();
                 match self.peek().tok_type {
-                    EQUAL  => {
-                        // numeric for 
+                    EQUAL => {
+                        // numeric for
                         self.advance(); // consume the '=' token
                         let start = self.parse_expression()?;
-                        self.consume(COMMA)?;
+                        consume!(self.advance(), COMMA)?;
                         let end = self.parse_expression()?;
 
                         let step = match self.peek().tok_type {
@@ -225,63 +263,174 @@ impl Parser {
                                 self.advance();
                                 self.parse_expression()?
                             }
-                            _ => Exp::Literal { value: Token::new(self.line, NUMBER { value: 1.0 }) }
+                            _ => Exp::Literal {
+                                value: Token::new(self.line, NUMBER { value: 1.0 }),
+                            },
                         };
 
-                        self.consume(DO)?;
+                        consume!(self.advance(), DO)?;
                         let body = self.parse_block()?;
-                        self.consume(END)?;
+                        consume!(self.advance(), END)?;
 
-                        Ok(Stmt::NumericFor { name: Name(value), start, end, step, body})
-                    },
-                    
+                        Ok(Stmt::NumericFor {
+                            name: Name(value),
+                            start,
+                            end,
+                            step,
+                            body,
+                        })
+                    }
+
                     _ => {
                         // generic for
-                        // get back one step!!!!!! 
+                        // get back one step!!!!!!
                         self.current -= 1;
                         let namelist = self.parse_namelist()?;
-                        self.consume(IN)?;
+                        consume!(self.advance(), IN)?;
                         let explist = self.parse_explist()?;
-                        self.consume(DO)?;
+                        consume!(self.advance(), DO)?;
                         let body = self.parse_block()?;
-                        self.consume(END)?;
+                        consume!(self.advance(), END)?;
 
-                        Ok(Stmt::GenericFor { namelist, explist, body})
+                        Ok(Stmt::GenericFor {
+                            namelist,
+                            explist,
+                            body,
+                        })
                     }
                 }
             }
 
-            _ => Err(ParseError::new(self.line, format!("<name> expected after 'for'")))
+            _ => Err(ParseError::new(
+                self.line,
+                format!("<name> expected after 'for'"),
+            )),
         }
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
-        self.consume(RETURN)?;
+        consume!(self.advance(), RETURN)?;
         let explist = self.parse_explist()?;
-        
+
         Ok(Stmt::RetStmt { explist })
     }
 
     fn parse_function_decl(&mut self, local: bool) -> Result<Stmt, ParseError> {
-        self.consume(FUNCTION)?;
+        consume!(self.advance(), FUNCTION)?;
         match self.peek().tok_type {
             NAME { value } => {
-                self.consume(LEFTPAREN)?;
+                consume!(self.advance(), LEFTPAREN)?;
                 let parlist = self.parse_namelist()?;
-                self.consume(RIGHTPAREN)?;
+                consume!(self.advance(), RIGHTPAREN)?;
                 let body = self.parse_block()?;
-                self.consume(END)?;
-                Ok(Stmt::FuncDecl { local, name: Name(value), parlist, body })
-            },
+                consume!(self.advance(), END)?;
+                Ok(Stmt::FuncDecl {
+                    local,
+                    name: Name(value),
+                    parlist,
+                    body,
+                })
+            }
 
             _ => {
-                return Err(ParseError::new(self.line, format!("<name> expected after 'function'")));
+                return Err(ParseError::new(
+                    self.line,
+                    format!("<name> expected after 'function'"),
+                ));
             }
         }
     }
 
     fn parse_expression(&mut self) -> Result<Exp, ParseError> {
-        self.parse_logic_or()
+        match self.peek().tok_type {
+            FUNCTION => {
+                // functiondef
+                self.parse_function_exp()
+            }
+
+            NAME { value: _ } => {
+                if let Some(LEFTPAREN) = self.look_ahead() {
+                    // function call
+                    self.parse_function_call()
+                } else {
+                    self.parse_logic_or()
+                }
+            }
+
+            LEFTBRACE => {
+                // table constructor
+                self.parse_table_constructor()
+            }
+
+            _ => self.parse_logic_or(),
+        }
+    }
+
+    fn parse_function_exp(&mut self) -> Result<Exp, ParseError> {
+        consume!(self.advance(), FUNCTION)?;
+        let parlist = self.parse_namelist()?;
+        let block = self.parse_block()?;
+        consume!(self.advance(), END)?;
+
+        Ok(Exp::FuncExp {
+            funcbody: FuncBody { parlist, block },
+        })
+    }
+
+    fn parse_function_call(&mut self) -> Result<Exp, ParseError> {
+        if let NAME { value } = self.peek().tok_type {
+            self.advance();
+            consume!(self.advance(), LEFTPAREN)?;
+            let arguments = self.parse_explist()?;
+            consume!(self.advance(), RIGHTPAREN)?;
+
+            Ok(Exp::FunctionCall {
+                name: Name(value),
+                arguments,
+            })
+        } else {
+            Err(ParseError::new(self.line, format!("<name> expected")))
+        }
+    }
+
+    fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
+        consume!(self.advance(), LEFTBRACE)?;
+        let fieldlist = self.parse_fieldlist()?;
+        consume!(self.advance(), RIGHTBRACE)?;
+        Ok(Exp::TableConstructor { fieldlist })
+    }
+
+    fn parse_fieldlist(&mut self) -> Result<FieldList, ParseError> {
+        let mut fields = vec![self.parse_field()?];
+        while let COMMA | SEMICOLON = self.peek().tok_type {
+            self.advance();
+            fields.push(self.parse_field()?);
+        }
+
+        Ok(FieldList { fields })
+    }
+
+    fn parse_field(&mut self) -> Result<Field, ParseError> {
+        if let Some(EQUAL) = self.look_ahead() {
+            // Name '=' exp
+            match self.peek().tok_type {
+                NAME { value } => {
+                    self.advance();
+                    consume!(self.advance(), EQUAL)?;
+                    Ok(Field {
+                        name: Some(Name(value)),
+                        exp: self.parse_expression()?,
+                    })
+                }
+                _ => Err(ParseError::new(self.line, format!("<name> expected."))),
+            }
+        } else {
+            // exp
+            Ok(Field {
+                name: None,
+                exp: self.parse_expression()?,
+            })
+        }
     }
 
     fn parse_logic_or(&mut self) -> Result<Exp, ParseError> {
@@ -385,7 +534,10 @@ impl Parser {
             let operator = self.peek();
             self.advance();
             let right = self.parse_unary()?;
-            Ok(Exp::Unary { operator, right: Box::new(right) })
+            Ok(Exp::Unary {
+                operator,
+                right: Box::new(right),
+            })
         } else {
             self.parse_power()
         }
@@ -412,7 +564,9 @@ impl Parser {
             self.advance();
             let expr = self.parse_expression()?;
             self.advance();
-            Ok(Exp::Grouping { expr: Box::new(expr) })
+            Ok(Exp::Grouping {
+                expr: Box::new(expr),
+            })
         } else {
             let value = self.peek();
             self.advance();
@@ -424,10 +578,14 @@ impl Parser {
         self.current >= self.tokens.len() - 1
     }
 
-    fn advance(&mut self) {
-        if !self.at_end()  {
+    fn advance(&mut self) -> Token {
+        if !self.at_end() {
             self.current += 1;
             self.line = self.peek().line;
+            self.tokens[self.current - 1].clone()
+        } else {
+            // return EOF
+            self.tokens[self.tokens.len() - 1].clone()
         }
     }
 
@@ -523,17 +681,11 @@ impl Parser {
         }
     }
 
-    fn consume(&mut self, tok_type: TokenType) -> Result<(), ParseError> {
+    fn look_ahead(&self) -> Option<TokenType> {
         if self.at_end() {
-            return Err(ParseError::new(self.line, format!("expect {}, found EOF", tok_type)));
+            return None;
         }
 
-        if let tok_type = self.peek().tok_type {
-            self.advance();
-            Ok(())
-        } else {
-            eprintln!("do not match");
-            Err(ParseError::new(self.line, format!("expect {}, found {}", tok_type, self.peek().tok_type)))
-        }
+        Some(self.tokens[self.current + 1].tok_type.clone())
     }
 }

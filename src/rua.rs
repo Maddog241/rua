@@ -1,9 +1,10 @@
 use std::{fs::read, process::exit};
 
 use crate::{
+    ast::Chunk,
     lexer::{LexError, Lexer},
-    parser::{Parser, ParseError},
-    token::Token, ast::Chunk,
+    parser::{ParseError, Parser},
+    token::Token,
 };
 
 pub struct Rua {
@@ -31,7 +32,6 @@ impl Rua {
 
         lexer.lex()
     }
-
 
     pub fn parse(&self, tokens: Vec<Token>) -> Result<Chunk, ParseError> {
         let mut parser = Parser::new(tokens);

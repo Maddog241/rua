@@ -164,7 +164,6 @@ impl PartialEq for TokenType {
             | (FUNCTION, FUNCTION)
             | (NIL, NIL)
             | (RETURN, RETURN)
-
             | (LEFTPAREN, LEFTPAREN)
             | (RIGHTPAREN, RIGHTPAREN)
             | (LEFTBRACKET, LEFTBRACKET)
@@ -175,7 +174,6 @@ impl PartialEq for TokenType {
             | (RIGHTBRACE, RIGHTBRACE)
             | (COMMA, COMMA)
             | (SEMICOLON, SEMICOLON)
-
             | (PLUS, PLUS)
             | (MINUS, MINUS)
             | (MUL, MUL)
@@ -184,7 +182,6 @@ impl PartialEq for TokenType {
             | (POW, POW)
             | (FLOORDIV, FLOORDIV)
             | (DOTDOT, DOTDOT)
-
             | (EQUAL, EQUAL)
             | (EQUALEQUAL, EQUALEQUAL)
             | (NOTEQUAL, NOTEQUAL)

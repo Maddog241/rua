@@ -22,10 +22,6 @@ pub enum Stmt {
         left: NameList,
         right: ExpList,
     },
-    FunctionCall {
-        name: Name,
-        explist: ExpList,
-    },
     Break,
     DoBlockEnd {
         block: Block,
@@ -52,11 +48,14 @@ pub enum Stmt {
         explist: ExpList,
         body: Block,
     },
-    FuncDecl{
+    FuncDecl {
         local: bool,
         name: Name,
         parlist: NameList,
-        body: Block, 
+        body: Block,
+    },
+    FunctionCall {
+        func_call: Exp,
     },
     RetStmt {
         explist: ExpList,
@@ -64,8 +63,8 @@ pub enum Stmt {
     Empty,
 }
 
-pub struct Name (pub String);
-pub struct NameList (pub Vec<Name>);
+pub struct Name(pub String);
+pub struct NameList(pub Vec<Name>);
 
 pub struct ExpList(pub Vec<Exp>);
 
@@ -92,25 +91,24 @@ pub enum Exp {
     FunctionCall {
         name: Name,
         arguments: ExpList,
-        body: Block,
     },
     TableConstructor {
         fieldlist: FieldList,
-    }
+    },
 }
 
 pub struct FuncBody {
-    parlist: NameList,
-    block: Block,
+    pub parlist: NameList,
+    pub block: Block,
 }
 
 pub struct FieldList {
-    fields: Vec<Field>,
+    pub fields: Vec<Field>,
 }
 
 pub struct Field {
-    name: Option<Name>,
-    exp: Exp,
+    pub name: Option<Name>,
+    pub exp: Exp,
 }
 
 impl fmt::Display for Name {
@@ -137,9 +135,9 @@ impl fmt::Display for NameList {
 
 impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.statements.iter().fold(Ok(()), |result, stmt|{
-            write!(f, "{}\n", stmt)
-        })
+        self.statements
+            .iter()
+            .fold(Ok(()), |_result, stmt| write!(f, "{}\n", stmt))
     }
 }
 
@@ -154,7 +152,7 @@ impl fmt::Display for Field {
         match &self.name {
             Some(name) => {
                 write!(f, "{} = {}", name, self.exp)
-            },
+            }
             None => {
                 write!(f, "{}", self.exp)
             }
@@ -178,8 +176,6 @@ impl fmt::Display for FieldList {
     }
 }
 
-
-
 impl fmt::Display for Exp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -192,7 +188,7 @@ impl fmt::Display for Exp {
             } => write!(f, "({} {} {})", left, operator.tok_type, right),
             Self::Grouping { expr } => write!(f, "({})", expr),
             Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments, body } => write!(f, "{}({}) {{\n{}\n}}", name, arguments, body),
+            Self::FunctionCall { name, arguments } => write!(f, "{}({})", name, arguments),
             Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
         }
     }
@@ -214,50 +210,57 @@ impl fmt::Display for ExpList {
     }
 }
 
-
-
-
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Assignment { local, left, right } => {
                 if *local {
-                    write!(f, "local {} = {}", left, right)
+                    write!(f, "Assignment: local {} = {}", left, right)
                 } else {
-                    write!(f, "{} = {}", left, right)
+                    write!(f, "Assignment: {} = {}", left, right)
                 }
-            },
-            
-            Self::FunctionCall { name, explist } => {
-                write!(f, "{}({})", name, explist)
-            },
+            }
+
+            Self::FunctionCall { func_call } => {
+                write!(f, "{}", func_call)
+            }
 
             Self::Break => {
                 write!(f, "break")
-            },
+            }
 
             Self::DoBlockEnd { block } => {
                 write!(f, "{}", block)
-            },
+            }
 
-            Self::FuncDecl { local, name, parlist, body } => {
+            Self::FuncDecl {
+                local,
+                name,
+                parlist,
+                body,
+            } => {
                 if *local {
                     write!(f, "local {}({}){{{}}}", name, parlist, body)
                 } else {
                     write!(f, "{}({}){{{}}}", name, parlist, body)
                 }
-            },
+            }
 
-            Self::IfStmt { condition, then_branch, elseif_branches, option_else_branch } => {
+            Self::IfStmt {
+                condition,
+                then_branch,
+                elseif_branches,
+                option_else_branch,
+            } => {
                 write!(f, "if({}) then\n\t{}\n", condition, then_branch)?;
                 for (condition, elseif_branch) in elseif_branches.iter() {
                     write!(f, "\telseif {}\n\t{}\n", condition, elseif_branch)?;
                 }
-                        
+
                 match option_else_branch {
                     Some(else_branch) => {
                         write!(f, "else\n{}\nend\n", else_branch)
-                    },
+                    }
                     None => {
                         write!(f, "end\n")
                     }
@@ -266,15 +269,29 @@ impl fmt::Display for Stmt {
 
             Self::WhileStmt { condition, body } => {
                 write!(f, "while({})\n\t{}\nend", condition, body)
-            },
+            }
 
-            Self::NumericFor { name, start, end, step, body } => {
-                write!(f, "for {}={}, {}, {} do\n\t{}\nend", name, start, end, step, body)
-            },
+            Self::NumericFor {
+                name,
+                start,
+                end,
+                step,
+                body,
+            } => {
+                write!(
+                    f,
+                    "for {}={}, {}, {} do\n\t{}\nend",
+                    name, start, end, step, body
+                )
+            }
 
-            Self::GenericFor { namelist, explist, body } => {
+            Self::GenericFor {
+                namelist,
+                explist,
+                body,
+            } => {
                 write!(f, "for {} = {} do\n\t{}\nend", namelist, explist, body)
-            },
+            }
 
             Self::RetStmt { explist } => {
                 write!(f, "return {}", explist)
