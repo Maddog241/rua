@@ -70,10 +70,9 @@ impl Parser {
                 // simicolon
                 SEMICOLON => {
                     self.advance();
-                    statements.push(Stmt::Empty);
                 }
 
-                // assignment
+                // assignment or function call 
                 NAME { value: _ } => match self.look_ahead() {
                     Some(LEFTPAREN) => statements.push(Stmt::FunctionCall {
                         func_call: self.parse_function_call()?,
@@ -147,8 +146,6 @@ impl Parser {
 
     fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError> {
         let namelist = self.parse_namelist()?;
-        // 这里有可能遇到is_end的情况
-        // 代码中很多地方都有可能遇到这种情况，多加注意
         consume!(self.advance(), EQUAL)?;
         let explist = self.parse_explist()?;
 
@@ -165,6 +162,7 @@ impl Parser {
             namelist.0.push(Name(value));
             self.advance();
         } else {
+            eprintln!("{}", self.peek());
             panic!("never go to this branch");
         }
 
@@ -186,21 +184,6 @@ impl Parser {
         }
 
         Ok(namelist)
-    }
-
-    fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
-        let mut explist = ExpList(Vec::new());
-
-        let exp = self.parse_expression()?;
-        explist.0.push(exp);
-
-        while let COMMA = self.peek().tok_type {
-            self.advance();
-            let exp = self.parse_expression()?;
-            explist.0.push(exp);
-        }
-
-        Ok(explist)
     }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
@@ -341,6 +324,22 @@ impl Parser {
         }
     }
 
+    // expressions
+    fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
+        let mut explist = ExpList(Vec::new());
+
+        let exp = self.parse_expression()?;
+        explist.0.push(exp);
+
+        while let COMMA = self.peek().tok_type {
+            self.advance();
+            let exp = self.parse_expression()?;
+            explist.0.push(exp);
+        }
+
+        Ok(explist)
+    }
+
     fn parse_expression(&mut self) -> Result<Exp, ParseError> {
         match self.peek().tok_type {
             FUNCTION => {
@@ -368,7 +367,9 @@ impl Parser {
 
     fn parse_function_exp(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), FUNCTION)?;
+        consume!(self.advance(), LEFTPAREN)?;
         let parlist = self.parse_namelist()?;
+        consume!(self.advance(), RIGHTPAREN)?;
         let block = self.parse_block()?;
         consume!(self.advance(), END)?;
 

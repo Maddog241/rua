@@ -2,12 +2,9 @@ use std::fmt;
 
 use crate::token::Token;
 
+// chunk
 pub struct Chunk {
     pub block: Block,
-}
-
-pub struct Block {
-    pub statements: Vec<Stmt>,
 }
 
 impl fmt::Display for Chunk {
@@ -16,6 +13,20 @@ impl fmt::Display for Chunk {
     }
 }
 
+// block
+pub struct Block {
+    pub statements: Vec<Stmt>,
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.statements
+            .iter()
+            .fold(Ok(()), |_result, stmt| write!(f, "{}\n", stmt))
+    }
+}
+
+// statement
 pub enum Stmt {
     Assignment {
         local: bool,
@@ -60,154 +71,6 @@ pub enum Stmt {
     RetStmt {
         explist: ExpList,
     },
-    Empty,
-}
-
-pub struct Name(pub String);
-pub struct NameList(pub Vec<Name>);
-
-pub struct ExpList(pub Vec<Exp>);
-
-pub enum Exp {
-    Literal {
-        // nil, false, true, numeral, literal string
-        value: Token,
-    },
-    Unary {
-        operator: Token,
-        right: Box<Exp>,
-    },
-    Binary {
-        left: Box<Exp>,
-        operator: Token,
-        right: Box<Exp>,
-    },
-    Grouping {
-        expr: Box<Exp>,
-    },
-    FuncExp {
-        funcbody: FuncBody,
-    },
-    FunctionCall {
-        name: Name,
-        arguments: ExpList,
-    },
-    TableConstructor {
-        fieldlist: FieldList,
-    },
-}
-
-pub struct FuncBody {
-    pub parlist: NameList,
-    pub block: Block,
-}
-
-pub struct FieldList {
-    pub fields: Vec<Field>,
-}
-
-pub struct Field {
-    pub name: Option<Name>,
-    pub exp: Exp,
-}
-
-impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl fmt::Display for NameList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.0.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.0.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
-}
-
-impl fmt::Display for Block {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.statements
-            .iter()
-            .fold(Ok(()), |_result, stmt| write!(f, "{}\n", stmt))
-    }
-}
-
-impl fmt::Display for FuncBody {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function ({}) {}", self.parlist, self.block)
-    }
-}
-
-impl fmt::Display for Field {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.name {
-            Some(name) => {
-                write!(f, "{} = {}", name, self.exp)
-            }
-            None => {
-                write!(f, "{}", self.exp)
-            }
-        }
-    }
-}
-
-impl fmt::Display for FieldList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.fields.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.fields.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
-}
-
-impl fmt::Display for Exp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Literal { value } => write!(f, "{}", value.tok_type),
-            Self::Unary { operator, right } => write!(f, "({} {})", operator.tok_type, right),
-            Self::Binary {
-                left,
-                operator,
-                right,
-            } => write!(f, "({} {} {})", left, operator.tok_type, right),
-            Self::Grouping { expr } => write!(f, "({})", expr),
-            Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments } => write!(f, "{}({})", name, arguments),
-            Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
-        }
-    }
-}
-
-impl fmt::Display for ExpList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut count = 0;
-        self.0.iter().fold(Ok(()), |result, name| {
-            result.and_then(|_| {
-                count += 1;
-                if count == self.0.len() {
-                    write!(f, "{}", name)
-                } else {
-                    write!(f, "{}, ", name)
-                }
-            })
-        })
-    }
 }
 
 impl fmt::Display for Stmt {
@@ -296,10 +159,153 @@ impl fmt::Display for Stmt {
             Self::RetStmt { explist } => {
                 write!(f, "return {}", explist)
             }
+        }
+    }
+}
 
-            Self::Empty => {
-                write!(f, "")
+
+// name and namelist
+pub struct Name(pub String);
+pub struct NameList(pub Vec<Name>);
+
+impl fmt::Display for Name {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for NameList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.0.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.0.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+
+
+// expression and explist
+pub enum Exp {
+    Literal {
+        // nil, false, true, numeral, literal string
+        value: Token,
+    },
+    Unary {
+        operator: Token,
+        right: Box<Exp>,
+    },
+    Binary {
+        left: Box<Exp>,
+        operator: Token,
+        right: Box<Exp>,
+    },
+    Grouping {
+        expr: Box<Exp>,
+    },
+    FuncExp {
+        funcbody: FuncBody,
+    },
+    FunctionCall {
+        name: Name,
+        arguments: ExpList,
+    },
+    TableConstructor {
+        fieldlist: FieldList,
+    },
+}
+
+pub struct ExpList(pub Vec<Exp>);
+
+impl fmt::Display for Exp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal { value } => write!(f, "{}", value.tok_type),
+            Self::Unary { operator, right } => write!(f, "({} {})", operator.tok_type, right),
+            Self::Binary {
+                left,
+                operator,
+                right,
+            } => write!(f, "({} {} {})", left, operator.tok_type, right),
+            Self::Grouping { expr } => write!(f, "({})", expr),
+            Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
+            Self::FunctionCall { name, arguments } => write!(f, "{}({})", name, arguments),
+            Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
+        }
+    }
+}
+
+impl fmt::Display for ExpList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.0.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.0.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+
+
+// funcbody
+pub struct FuncBody {
+    pub parlist: NameList,
+    pub block: Block,
+}
+
+impl fmt::Display for FuncBody {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "function ({}) {}", self.parlist, self.block)
+    }
+}
+
+// field and fieldlist
+pub struct Field {
+    pub name: Option<Name>,
+    pub exp: Exp,
+}
+
+pub struct FieldList {
+    pub fields: Vec<Field>,
+}
+
+impl fmt::Display for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.name {
+            Some(name) => {
+                write!(f, "{} = {}", name, self.exp)
+            }
+            None => {
+                write!(f, "{}", self.exp)
             }
         }
     }
 }
+
+impl fmt::Display for FieldList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        self.fields.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.fields.len() {
+                    write!(f, "{}", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
+    }
+}
+

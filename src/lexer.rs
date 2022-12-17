@@ -190,7 +190,7 @@ impl<'a> Lexer<'a> {
                         Err(e) => return Err(e),
                     }
                 }
-                b' ' | b'\r' => {
+                b' ' | b'\r' | b'\t' => {
                     self.advance(1);
                 }
                 b'\n' => {
