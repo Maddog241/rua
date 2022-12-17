@@ -22,7 +22,7 @@ impl fmt::Display for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.statements
             .iter()
-            .fold(Ok(()), |_result, stmt| write!(f, "{}\n", stmt))
+            .fold(Ok(()), |_result, stmt| write!(f, "{}", stmt))
     }
 }
 
@@ -78,18 +78,18 @@ impl fmt::Display for Stmt {
         match self {
             Self::Assignment { local, left, right } => {
                 if *local {
-                    write!(f, "Assignment: local {} = {}", left, right)
+                    write!(f, "local {} = {}\n", left, right)
                 } else {
-                    write!(f, "Assignment: {} = {}", left, right)
+                    write!(f, "{} = {}\n", left, right)
                 }
             }
 
             Self::FunctionCall { func_call } => {
-                write!(f, "{}", func_call)
+                write!(f, "{}\n", func_call)
             }
 
             Self::Break => {
-                write!(f, "break")
+                write!(f, "break\n")
             }
 
             Self::DoBlockEnd { block } => {
@@ -103,9 +103,9 @@ impl fmt::Display for Stmt {
                 body,
             } => {
                 if *local {
-                    write!(f, "local {}({}){{{}}}", name, parlist, body)
+                    write!(f, "\nFunctionDecl: local {}({}){{\n{}}}\n", name, parlist, body)
                 } else {
-                    write!(f, "{}({}){{{}}}", name, parlist, body)
+                    write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, parlist, body)
                 }
             }
 
@@ -115,23 +115,23 @@ impl fmt::Display for Stmt {
                 elseif_branches,
                 option_else_branch,
             } => {
-                write!(f, "if({}) then\n\t{}\n", condition, then_branch)?;
+                write!(f, "\nif({}) {{\n{}}} ", condition, then_branch)?;
                 for (condition, elseif_branch) in elseif_branches.iter() {
-                    write!(f, "\telseif {}\n\t{}\n", condition, elseif_branch)?;
+                    write!(f, "elseif({}){{\n{}}}", condition, elseif_branch)?;
                 }
 
                 match option_else_branch {
                     Some(else_branch) => {
-                        write!(f, "else\n{}\nend\n", else_branch)
+                        write!(f, "else{{\n{}}}\n", else_branch)
                     }
                     None => {
-                        write!(f, "end\n")
+                        write!(f, "\n")
                     }
                 }
             }
 
             Self::WhileStmt { condition, body } => {
-                write!(f, "while({})\n\t{}\nend", condition, body)
+                write!(f, "while({}) {{\n{}}}\n", condition, body)
             }
 
             Self::NumericFor {
@@ -143,7 +143,7 @@ impl fmt::Display for Stmt {
             } => {
                 write!(
                     f,
-                    "for {}={}, {}, {} do\n\t{}\nend",
+                    "NumericFor({}={},{},{}) do {{\n{}}}\n",
                     name, start, end, step, body
                 )
             }
@@ -153,11 +153,11 @@ impl fmt::Display for Stmt {
                 explist,
                 body,
             } => {
-                write!(f, "for {} = {} do\n\t{}\nend", namelist, explist, body)
+                write!(f, "GenericFor({} = {}) do {{\n{}}}\n", namelist, explist, body)
             }
 
             Self::RetStmt { explist } => {
-                write!(f, "return {}", explist)
+                write!(f, "return {}\n", explist)
             }
         }
     }
@@ -177,11 +177,12 @@ impl fmt::Display for Name {
 impl fmt::Display for NameList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut count = 0;
+        write!(f, "Namelist(")?;
         self.0.iter().fold(Ok(()), |result, name| {
             result.and_then(|_| {
                 count += 1;
                 if count == self.0.len() {
-                    write!(f, "{}", name)
+                    write!(f, "{})", name)
                 } else {
                     write!(f, "{}, ", name)
                 }
@@ -235,8 +236,8 @@ impl fmt::Display for Exp {
             } => write!(f, "({} {} {})", left, operator.tok_type, right),
             Self::Grouping { expr } => write!(f, "({})", expr),
             Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments } => write!(f, "{}({})", name, arguments),
-            Self::TableConstructor { fieldlist } => write!(f, "{{{}}}", fieldlist),
+            Self::FunctionCall { name, arguments } => write!(f, "FunctionCall: {}({})", name, arguments),
+            Self::TableConstructor { fieldlist } => write!(f, "Table{{{}}}", fieldlist),
         }
     }
 }
@@ -244,11 +245,12 @@ impl fmt::Display for Exp {
 impl fmt::Display for ExpList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut count = 0;
+        write!(f, "ExpList(")?;
         self.0.iter().fold(Ok(()), |result, name| {
             result.and_then(|_| {
                 count += 1;
                 if count == self.0.len() {
-                    write!(f, "{}", name)
+                    write!(f, "{})", name)
                 } else {
                     write!(f, "{}, ", name)
                 }
@@ -266,7 +268,7 @@ pub struct FuncBody {
 
 impl fmt::Display for FuncBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function ({}) {}", self.parlist, self.block)
+        write!(f, "function({}){{{}}}", self.parlist, self.block)
     }
 }
 

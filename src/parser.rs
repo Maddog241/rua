@@ -8,14 +8,14 @@ use crate::{
 };
 
 macro_rules! consume {
-    ( $value: expr, $expected: pat  ) => {{
+    ( $value: expr, $expected_pat: pat, $expected_expr: expr) => {{
         let tok = $value;
-        if let $expected = tok.tok_type {
+        if let $expected_pat = tok.tok_type {
             Ok(())
         } else {
             Err(ParseError::new(
                 tok.line,
-                format!("unexpected token {}", tok.tok_type),
+                format!("unexpected token {}, expect {}", tok.tok_type, $expected_expr),
             ))
         }
     }};
@@ -59,6 +59,10 @@ impl Parser {
             block: self.parse_block()?,
         };
 
+        if !self.at_end() {
+            return Err(ParseError::new(self.line, format!("unexpected symbol '{}'", self.peek().tok_type)))
+        }
+
         Ok(chunk)
     }
 
@@ -92,7 +96,7 @@ impl Parser {
                     let res = Stmt::DoBlockEnd {
                         block: self.parse_block()?,
                     };
-                    consume!(self.advance(), END)?;
+                    consume!(self.advance(), END, END)?;
                     statements.push(res);
                 }
 
@@ -146,7 +150,7 @@ impl Parser {
 
     fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError> {
         let namelist = self.parse_namelist()?;
-        consume!(self.advance(), EQUAL)?;
+        consume!(self.advance(), EQUAL, EQUAL)?;
         let explist = self.parse_explist()?;
 
         Ok(Stmt::Assignment {
@@ -187,38 +191,42 @@ impl Parser {
     }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
-        consume!(self.advance(), WHILE)?;
+        consume!(self.advance(), WHILE, WHILE)?;
         let condition = self.parse_expression()?;
-        consume!(self.advance(), DO)?;
+        consume!(self.advance(), DO, DO)?;
         let body = self.parse_block()?;
-        consume!(self.advance(), END)?;
+        consume!(self.advance(), END, END)?;
 
         Ok(Stmt::WhileStmt { condition, body })
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
-        consume!(self.advance(), IF)?;
+        consume!(self.advance(), IF, IF)?;
         let condition = self.parse_expression()?;
-        consume!(self.advance(), THEN)?;
+        consume!(self.advance(), THEN, THEN)?;
         let then_branch = self.parse_block()?;
 
         let mut elseif_branches = Vec::new();
 
         while let ELSEIF = self.peek().tok_type {
-            consume!(self.advance(), ELSEIF)?;
+            consume!(self.advance(), ELSEIF, ELSEIF)?;
             let elseif_condition = self.parse_expression()?;
-            consume!(self.advance(), THEN)?;
+            consume!(self.advance(), THEN, THEN)?;
             let elseif_branch = self.parse_block()?;
             elseif_branches.push((elseif_condition, elseif_branch));
         }
 
         let option_else_branch = match self.peek().tok_type {
-            ELSE => Some(self.parse_block()?),
+            ELSE => {
+                consume!(self.advance(), ELSE, ELSE)?;
+                Some(self.parse_block()?)
+            }
+
 
             _ => None,
         };
 
-        consume!(self.advance(), END)?;
+        consume!(self.advance(), END, END)?;
 
         Ok(Stmt::IfStmt {
             condition,
@@ -229,7 +237,7 @@ impl Parser {
     }
 
     fn parse_for(&mut self) -> Result<Stmt, ParseError> {
-        consume!(self.advance(), FOR)?;
+        consume!(self.advance(), FOR, FOR)?;
         match self.peek().tok_type {
             NAME { value } => {
                 self.advance();
@@ -238,7 +246,7 @@ impl Parser {
                         // numeric for
                         self.advance(); // consume the '=' token
                         let start = self.parse_expression()?;
-                        consume!(self.advance(), COMMA)?;
+                        consume!(self.advance(), COMMA, COMMA)?;
                         let end = self.parse_expression()?;
 
                         let step = match self.peek().tok_type {
@@ -251,9 +259,9 @@ impl Parser {
                             },
                         };
 
-                        consume!(self.advance(), DO)?;
+                        consume!(self.advance(), DO, DO)?;
                         let body = self.parse_block()?;
-                        consume!(self.advance(), END)?;
+                        consume!(self.advance(), END, END)?;
 
                         Ok(Stmt::NumericFor {
                             name: Name(value),
@@ -269,11 +277,11 @@ impl Parser {
                         // get back one step!!!!!!
                         self.current -= 1;
                         let namelist = self.parse_namelist()?;
-                        consume!(self.advance(), IN)?;
+                        consume!(self.advance(), IN, IN)?;
                         let explist = self.parse_explist()?;
-                        consume!(self.advance(), DO)?;
+                        consume!(self.advance(), DO, DO)?;
                         let body = self.parse_block()?;
-                        consume!(self.advance(), END)?;
+                        consume!(self.advance(), END, END)?;
 
                         Ok(Stmt::GenericFor {
                             namelist,
@@ -292,21 +300,22 @@ impl Parser {
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
-        consume!(self.advance(), RETURN)?;
+        consume!(self.advance(), RETURN, RETURN)?;
         let explist = self.parse_explist()?;
 
         Ok(Stmt::RetStmt { explist })
     }
 
     fn parse_function_decl(&mut self, local: bool) -> Result<Stmt, ParseError> {
-        consume!(self.advance(), FUNCTION)?;
+        consume!(self.advance(), FUNCTION, FUNCTION)?;
         match self.peek().tok_type {
             NAME { value } => {
-                consume!(self.advance(), LEFTPAREN)?;
+                self.advance();
+                consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
                 let parlist = self.parse_namelist()?;
-                consume!(self.advance(), RIGHTPAREN)?;
+                consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
                 let body = self.parse_block()?;
-                consume!(self.advance(), END)?;
+                consume!(self.advance(), END, END)?;
                 Ok(Stmt::FuncDecl {
                     local,
                     name: Name(value),
@@ -366,12 +375,12 @@ impl Parser {
     }
 
     fn parse_function_exp(&mut self) -> Result<Exp, ParseError> {
-        consume!(self.advance(), FUNCTION)?;
-        consume!(self.advance(), LEFTPAREN)?;
+        consume!(self.advance(), FUNCTION, FUNCTION)?;
+        consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
         let parlist = self.parse_namelist()?;
-        consume!(self.advance(), RIGHTPAREN)?;
+        consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
         let block = self.parse_block()?;
-        consume!(self.advance(), END)?;
+        consume!(self.advance(), END, END)?;
 
         Ok(Exp::FuncExp {
             funcbody: FuncBody { parlist, block },
@@ -381,9 +390,9 @@ impl Parser {
     fn parse_function_call(&mut self) -> Result<Exp, ParseError> {
         if let NAME { value } = self.peek().tok_type {
             self.advance();
-            consume!(self.advance(), LEFTPAREN)?;
+            consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
             let arguments = self.parse_explist()?;
-            consume!(self.advance(), RIGHTPAREN)?;
+            consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
 
             Ok(Exp::FunctionCall {
                 name: Name(value),
@@ -395,9 +404,9 @@ impl Parser {
     }
 
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
-        consume!(self.advance(), LEFTBRACE)?;
+        consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
         let fieldlist = self.parse_fieldlist()?;
-        consume!(self.advance(), RIGHTBRACE)?;
+        consume!(self.advance(), RIGHTBRACE, RIGHTBRACE)?;
         Ok(Exp::TableConstructor { fieldlist })
     }
 
@@ -417,7 +426,7 @@ impl Parser {
             match self.peek().tok_type {
                 NAME { value } => {
                     self.advance();
-                    consume!(self.advance(), EQUAL)?;
+                    consume!(self.advance(), EQUAL, EQUAL)?;
                     Ok(Field {
                         name: Some(Name(value)),
                         exp: self.parse_expression()?,
