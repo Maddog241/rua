@@ -304,7 +304,7 @@ impl Interpreter {
         todo!()
     }
 
-    fn eval_table(fieldlist: &FieldList) -> Result<Value, RuntimeError> {
+    fn eval_table(fieldlist: &Option<FieldList>) -> Result<Value, RuntimeError> {
         todo!()
     }
 

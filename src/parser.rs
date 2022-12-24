@@ -386,7 +386,11 @@ impl Parser {
     fn parse_function_exp(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), FUNCTION, FUNCTION)?;
         consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
-        let parlist = self.parse_namelist()?;
+        let parlist = if let RIGHTPAREN = self.peek().tok_type {
+                    None
+                } else {
+                    Some(self.parse_namelist()?)
+                };
         consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
         let block = self.parse_block()?;
         consume!(self.advance(), END, END)?;
@@ -417,7 +421,11 @@ impl Parser {
 
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
-        let fieldlist = self.parse_fieldlist()?;
+        let fieldlist = if let RIGHTBRACE = self.peek().tok_type {
+                    None
+                } else {
+                    Some(self.parse_fieldlist()?)
+                };
         consume!(self.advance(), RIGHTBRACE, RIGHTBRACE)?;
         Ok(Exp::TableConstructor { fieldlist })
     }

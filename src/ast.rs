@@ -230,7 +230,7 @@ pub enum Exp {
         arguments: Option<ExpList>,
     },
     TableConstructor {
-        fieldlist: FieldList,
+        fieldlist: Option<FieldList>,
     },
 }
 
@@ -254,7 +254,14 @@ impl fmt::Display for Exp {
                     None => write!(f, "FunctionCall: {}()", name)
                 }
             }
-            Self::TableConstructor { fieldlist } => write!(f, "Table{{{}}}", fieldlist),
+            Self::TableConstructor { fieldlist } => {
+                match fieldlist {
+                    Some(fieldlist) => {
+                        write!(f, "Table{{{}}}", fieldlist)
+                    }
+                    None => write!(f, "Table{{}}")
+                }
+            }
         }
     }
 }
@@ -278,13 +285,16 @@ impl fmt::Display for ExpList {
 
 // funcbody
 pub struct FuncBody {
-    pub parlist: NameList,
+    pub parlist: Option<NameList>,
     pub block: Block,
 }
 
 impl fmt::Display for FuncBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function({}){{{}}}", self.parlist, self.block)
+        match &self.parlist {
+            Some(parlist) => write!(f, "function({}){{{}}}", parlist, self.block),
+            None => write!(f, "function(){{{}}}", self.block)
+        }
     }
 }
 
