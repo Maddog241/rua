@@ -103,7 +103,11 @@ impl fmt::Display for Stmt {
                 body,
             } => {
                 if *local {
-                    write!(f, "\nFunctionDecl: local {}({}){{\n{}}}\n", name, parlist, body)
+                    write!(
+                        f,
+                        "\nFunctionDecl: local {}({}){{\n{}}}\n",
+                        name, parlist, body
+                    )
                 } else {
                     write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, parlist, body)
                 }
@@ -153,7 +157,11 @@ impl fmt::Display for Stmt {
                 explist,
                 body,
             } => {
-                write!(f, "GenericFor({} = {}) do {{\n{}}}\n", namelist, explist, body)
+                write!(
+                    f,
+                    "GenericFor({} = {}) do {{\n{}}}\n",
+                    namelist, explist, body
+                )
             }
 
             Self::RetStmt { explist } => {
@@ -162,7 +170,6 @@ impl fmt::Display for Stmt {
         }
     }
 }
-
 
 // name and namelist
 pub struct Name(pub String);
@@ -190,7 +197,6 @@ impl fmt::Display for NameList {
         })
     }
 }
-
 
 // expression and explist
 pub enum Exp {
@@ -236,7 +242,9 @@ impl fmt::Display for Exp {
             } => write!(f, "({} {} {})", left, operator.tok_type, right),
             Self::Grouping { expr } => write!(f, "({})", expr),
             Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments } => write!(f, "FunctionCall: {}({})", name, arguments),
+            Self::FunctionCall { name, arguments } => {
+                write!(f, "FunctionCall: {}({})", name, arguments)
+            }
             Self::TableConstructor { fieldlist } => write!(f, "Table{{{}}}", fieldlist),
         }
     }
@@ -258,7 +266,6 @@ impl fmt::Display for ExpList {
         })
     }
 }
-
 
 // funcbody
 pub struct FuncBody {
@@ -310,4 +317,3 @@ impl fmt::Display for FieldList {
         })
     }
 }
-

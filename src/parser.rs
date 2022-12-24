@@ -15,7 +15,10 @@ macro_rules! consume {
         } else {
             Err(ParseError::new(
                 tok.line,
-                format!("unexpected token {}, expect {}", tok.tok_type, $expected_expr),
+                format!(
+                    "unexpected token {}, expect {}",
+                    tok.tok_type, $expected_expr
+                ),
             ))
         }
     }};
@@ -60,7 +63,10 @@ impl Parser {
         };
 
         if !self.at_end() {
-            return Err(ParseError::new(self.line, format!("unexpected symbol '{}'", self.peek().tok_type)))
+            return Err(ParseError::new(
+                self.line,
+                format!("unexpected symbol '{}'", self.peek().tok_type),
+            ));
         }
 
         Ok(chunk)
@@ -76,7 +82,7 @@ impl Parser {
                     self.advance();
                 }
 
-                // assignment or function call 
+                // assignment or function call
                 NAME { value: _ } => match self.look_ahead() {
                     Some(LEFTPAREN) => statements.push(Stmt::FunctionCall {
                         func_call: self.parse_function_call()?,
@@ -221,7 +227,6 @@ impl Parser {
                 consume!(self.advance(), ELSE, ELSE)?;
                 Some(self.parse_block()?)
             }
-
 
             _ => None,
         };
