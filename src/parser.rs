@@ -317,7 +317,11 @@ impl Parser {
             NAME { value } => {
                 self.advance();
                 consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
-                let parlist = self.parse_namelist()?;
+                let parlist = if let RIGHTPAREN = self.peek().tok_type {
+                        None
+                    } else {
+                        Some(self.parse_namelist()?)
+                    };
                 consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
                 let body = self.parse_block()?;
                 consume!(self.advance(), END, END)?;
@@ -327,7 +331,7 @@ impl Parser {
                     parlist,
                     body,
                 })
-            }
+            },
 
             _ => {
                 return Err(ParseError::new(
@@ -396,9 +400,12 @@ impl Parser {
         if let NAME { value } = self.peek().tok_type {
             self.advance();
             consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
-            let arguments = self.parse_explist()?;
+            let arguments = if let RIGHTPAREN = self.peek().tok_type {
+                    None
+                } else {
+                    Some(self.parse_explist()?)
+                };
             consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
-
             Ok(Exp::FunctionCall {
                 name: Name(value),
                 arguments,

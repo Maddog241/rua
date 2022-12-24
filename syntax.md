@@ -12,7 +12,7 @@ stmt ::= ';' |
         for namelist in explist do block end | 
         ['local'] function Name funcbody | 
         return [explist] [';']
-functioncall ::= Name '(' explist ')'
+functioncall ::= Name '(' [explist] ')'
 namelist ::= Name {',' Name}
 explist ::= exp {',' exp}
 exp ::= nil | false | true | Numeral | LiteralString | func_exp |

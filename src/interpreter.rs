@@ -300,7 +300,7 @@ impl Interpreter {
         todo!()
     }
 
-    fn eval_func_call(name: &Name, explist: &ExpList) -> Result<Value, RuntimeError> {
+    fn eval_func_call(name: &Name, explist: &Option<ExpList>) -> Result<Value, RuntimeError> {
         todo!()
     }
 

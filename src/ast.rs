@@ -62,7 +62,7 @@ pub enum Stmt {
     FuncDecl {
         local: bool,
         name: Name,
-        parlist: NameList,
+        parlist: Option<NameList>,
         body: Block,
     },
     FunctionCall {
@@ -103,13 +103,19 @@ impl fmt::Display for Stmt {
                 body,
             } => {
                 if *local {
-                    write!(
-                        f,
-                        "\nFunctionDecl: local {}({}){{\n{}}}\n",
-                        name, parlist, body
-                    )
+                    match parlist {
+                        Some(namelist) => {
+                            write!(f, "\nFunctionDecl: local {}({}){{\n{}}}\n", name, namelist, body)
+                        },
+                        None => write!(f, "\nFunctionDecl: local {}(){{\n{}}}\n", name, body)
+                    }
                 } else {
-                    write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, parlist, body)
+                    match parlist {
+                        Some(namelist) => {
+                            write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, namelist, body)
+                        },
+                        None => write!(f, "\nFunctionDecl: {}(){{\n{}}}\n", name, body)
+                    }
                 }
             }
 
@@ -221,7 +227,7 @@ pub enum Exp {
     },
     FunctionCall {
         name: Name,
-        arguments: ExpList,
+        arguments: Option<ExpList>,
     },
     TableConstructor {
         fieldlist: FieldList,
@@ -243,7 +249,10 @@ impl fmt::Display for Exp {
             Self::Grouping { expr } => write!(f, "({})", expr),
             Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
             Self::FunctionCall { name, arguments } => {
-                write!(f, "FunctionCall: {}({})", name, arguments)
+                match arguments {
+                    Some(arguments) => write!(f, "FunctionCall: {}({})", name, arguments),
+                    None => write!(f, "FunctionCall: {}()", name)
+                }
             }
             Self::TableConstructor { fieldlist } => write!(f, "Table{{{}}}", fieldlist),
         }
