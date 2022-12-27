@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Block, Chunk, Exp, ExpList, Field, FieldList, FuncBody, Name, NameList, Stmt},
+    ast::{Block, Exp, ExpList, Field, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
     rua::RuaError,
     token::{
         Token,
@@ -56,11 +56,8 @@ impl Parser {
         }
     }
 
-    // recursive descent parsing
-    pub fn parse(&mut self) -> Result<Chunk, ParseError> {
-        let chunk = Chunk {
-            block: self.parse_block()?,
-        };
+    pub fn parse(&mut self) -> Result<Block, ParseError> {
+        let block = self.parse_block()?;
 
         if !self.at_end() {
             return Err(ParseError::new(
@@ -69,26 +66,49 @@ impl Parser {
             ));
         }
 
-        Ok(chunk)
+        Ok(block)
     }
 
+    /// block -> stmt* (retstat)?
     fn parse_block(&mut self) -> Result<Block, ParseError> {
         let mut statements = Vec::new();
 
         loop {
             match self.peek().tok_type {
-                // simicolon
+                // ';'
                 SEMICOLON => {
                     self.advance();
                 }
 
                 // assignment or function call
-                NAME { value: _ } => match self.look_ahead() {
-                    Some(LEFTPAREN) => statements.push(Stmt::FunctionCall {
-                        func_call: self.parse_function_call()?,
-                    }),
-                    _ => statements.push(self.parse_assignment(false)?),
-                },
+                NAME { value: _ } => {
+                    match self.parse_prefixexp()? {
+                        // assignment
+                        Exp::Var { var } => {
+                            // parse vars
+                            let mut vars = vec![var];
+                            while let COMMA = self.peek().tok_type {
+                                self.advance();
+                                vars.push(self.parse_var()?);
+                            }
+
+                            consume!(self.advance(), EQUAL, EQUAL)?;
+
+                            let explist = self.parse_explist()?;
+
+                            statements.push(Stmt::Assign {
+                                left: VarList { vars },
+                                right: explist,
+                            })
+                        },
+                        // functioncall
+                        Exp::FunctionCall { prefixexp, arguments } => {
+                            statements.push(Stmt::FunctionCall { func_call: Exp::FunctionCall { prefixexp, arguments } })
+                        },
+                        // grouping, error
+                        _ => return Err(ParseError::new(self.peek().line, format!("syntax error near {}", self.peek().tok_type))),
+                    }
+                }
 
                 // break
                 BREAK => {
@@ -121,11 +141,6 @@ impl Parser {
                     statements.push(self.parse_for()?);
                 }
 
-                // return
-                RETURN => {
-                    statements.push(self.parse_return()?);
-                }
-
                 // function Name funcbody
                 FUNCTION => statements.push(self.parse_function_decl(false)?),
 
@@ -133,7 +148,7 @@ impl Parser {
                     self.advance();
                     match self.peek().tok_type {
                         NAME { value: _ } => {
-                            statements.push(self.parse_assignment(true)?);
+                            statements.push(self.parse_local_assignment()?);
                         }
                         FUNCTION => {
                             statements.push(self.parse_function_decl(true)?);
@@ -151,50 +166,27 @@ impl Parser {
             }
         }
 
+        if let RETURN = self.peek().tok_type {
+            statements.push(self.parse_return()?);
+        }
+
         Ok(Block { statements })
     }
 
-    fn parse_assignment(&mut self, local: bool) -> Result<Stmt, ParseError> {
+    fn parse_local_assignment(&mut self) -> Result<Stmt, ParseError> {
         let namelist = self.parse_namelist()?;
-        consume!(self.advance(), EQUAL, EQUAL)?;
-        let explist = self.parse_explist()?;
+        if let EQUAL = self.peek().tok_type {
+            consume!(self.advance(), EQUAL, EQUAL)?;
+            let explist = self.parse_explist()?;
 
-        Ok(Stmt::Assignment {
-            local,
-            left: namelist,
-            right: explist,
-        })
-    }
-
-    fn parse_namelist(&mut self) -> Result<NameList, ParseError> {
-        let mut namelist = NameList(Vec::new());
-        if let NAME { value } = self.peek().tok_type {
-            namelist.0.push(Name(value));
-            self.advance();
+            Ok(Stmt::LocalAssign {
+                left: namelist,
+                right: Some(explist),
+            })
         } else {
-            eprintln!("{}", self.peek());
-            panic!("never go to this branch");
+            Ok(Stmt::LocalAssign { left: namelist, right: None })
         }
-
-        while !self.at_end() {
-            if let COMMA = self.peek().tok_type {
-                self.advance();
-                if let NAME { value } = self.peek().tok_type {
-                    namelist.0.push(Name(value));
-                    self.advance();
-                } else {
-                    return Err(ParseError::new(
-                        self.peek().line,
-                        String::from("unexpected symbol after ','"),
-                    ));
-                }
-            } else {
-                break;
-            }
-        }
-
-        Ok(namelist)
-    }
+   }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
         consume!(self.advance(), WHILE, WHILE)?;
@@ -207,6 +199,7 @@ impl Parser {
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
+        // if exp then block
         consume!(self.advance(), IF, IF)?;
         let condition = self.parse_expression()?;
         consume!(self.advance(), THEN, THEN)?;
@@ -214,6 +207,7 @@ impl Parser {
 
         let mut elseif_branches = Vec::new();
 
+        // (elseif exp then block)*
         while let ELSEIF = self.peek().tok_type {
             consume!(self.advance(), ELSEIF, ELSEIF)?;
             let elseif_condition = self.parse_expression()?;
@@ -222,6 +216,7 @@ impl Parser {
             elseif_branches.push((elseif_condition, elseif_branch));
         }
 
+        // (else block)?
         let option_else_branch = match self.peek().tok_type {
             ELSE => {
                 consume!(self.advance(), ELSE, ELSE)?;
@@ -231,6 +226,7 @@ impl Parser {
             _ => None,
         };
 
+        // end
         consume!(self.advance(), END, END)?;
 
         Ok(Stmt::IfStmt {
@@ -245,11 +241,11 @@ impl Parser {
         consume!(self.advance(), FOR, FOR)?;
         match self.peek().tok_type {
             NAME { value } => {
-                self.advance();
-                match self.peek().tok_type {
-                    EQUAL => {
+                match self.look_ahead() {
+                    Some(EQUAL) => {
                         // numeric for
-                        self.advance(); // consume the '=' token
+                        self.advance();
+                        consume!(self.advance(), EQUAL, EQUAL)?; // consume the '=' token
                         let start = self.parse_expression()?;
                         consume!(self.advance(), COMMA, COMMA)?;
                         let end = self.parse_expression()?;
@@ -280,7 +276,6 @@ impl Parser {
                     _ => {
                         // generic for
                         // get back one step!!!!!!
-                        self.current -= 1;
                         let namelist = self.parse_namelist()?;
                         consume!(self.advance(), IN, IN)?;
                         let explist = self.parse_explist()?;
@@ -299,16 +294,31 @@ impl Parser {
 
             _ => Err(ParseError::new(
                 self.line,
-                format!("<name> expected after 'for'"),
+                format!("<name> expected near {}", self.peek().tok_type),
             )),
         }
     }
 
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
         consume!(self.advance(), RETURN, RETURN)?;
-        let explist = self.parse_explist()?;
+        match self.peek().tok_type {
+            SEMICOLON => {
+                self.advance();
+                Ok(Stmt::RetStmt { explist: None })
+            }
 
-        Ok(Stmt::RetStmt { explist })
+            END | ELSE | ELSEIF => {
+                Ok(Stmt::RetStmt { explist: None })
+            }
+
+            _ => {
+                let explist = self.parse_explist()?;
+                if let SEMICOLON = self.peek().tok_type {
+                        self.advance();
+                }
+                Ok(Stmt::RetStmt { explist: Some(explist) })
+            }
+        }
     }
 
     fn parse_function_decl(&mut self, local: bool) -> Result<Stmt, ParseError> {
@@ -318,10 +328,10 @@ impl Parser {
                 self.advance();
                 consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
                 let parlist = if let RIGHTPAREN = self.peek().tok_type {
-                        None
-                    } else {
-                        Some(self.parse_namelist()?)
-                    };
+                    None
+                } else {
+                    Some(self.parse_namelist()?)
+                };
                 consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
                 let body = self.parse_block()?;
                 consume!(self.advance(), END, END)?;
@@ -331,7 +341,7 @@ impl Parser {
                     parlist,
                     body,
                 })
-            },
+            }
 
             _ => {
                 return Err(ParseError::new(
@@ -342,7 +352,283 @@ impl Parser {
         }
     }
 
+
+
+
+
     // expressions
+
+    /// exp -> logic_or
+    fn parse_expression(&mut self) -> Result<Exp, ParseError> {
+        self.parse_logic_or()
+        
+    }
+
+    /// logic_or -> logic_and ('or' logic_and)*
+    fn parse_logic_or(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_logic_and()?;
+        while self.peek_logic_or() {
+            let operator = self.advance();
+            let right = self.parse_logic_and()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// logic_and -> comparison ('and' comparison)*
+    fn parse_logic_and(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_comparison()?;
+        while self.peek_logic_and() {
+            let operator = self.advance();
+            let right = self.parse_comparison()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// comparison -> concat (('>' | '<' | '<=' | '>=' | '==' | '~=')) concat)*
+    fn parse_comparison(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_concat()?;
+        while self.peek_comparison() {
+            let operator = self.advance();
+            let right = self.parse_concat()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// concat -> term ('..' term)*
+    fn parse_concat(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_term()?;
+        while self.peek_concat() {
+            let operator = self.advance();
+            let right = self.parse_term()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// term -> factor (('-' | '+') factor)*
+    fn parse_term(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_factor()?;
+        while self.peek_term() {
+            let operator = self.advance();
+            let right = self.parse_factor()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// factor -> unary (('/' | '//' | '%' | '*') unary)*
+    fn parse_factor(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_unary()?;
+        while self.peek_factor() {
+            let operator = self.advance();
+            let right = self.parse_unary()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// unary -> (not | '-') unary | power
+    fn parse_unary(&mut self) -> Result<Exp, ParseError> {
+        if self.peek_unary() {
+            let operator = self.advance();
+            let right = self.parse_unary()?;
+            Ok(Exp::Unary {
+                operator,
+                right: Box::new(right),
+            })
+        } else {
+            self.parse_power()
+        }
+    }
+
+    /// power -> primary ('^' primary)*
+    fn parse_power(&mut self) -> Result<Exp, ParseError> {
+        let mut left = self.parse_primary()?;
+        while self.peek_power() {
+            let operator = self.advance();
+            let right = self.parse_literal()?;
+            left = Exp::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            }
+        }
+
+        Ok(left)
+    }
+
+    /// primary -> functiondef | tableconstructor | prefixexp
+    fn parse_primary(&mut self) -> Result<Exp, ParseError> {
+        match self.peek().tok_type {
+            LEFTBRACE => {
+                self.parse_table_constructor()
+            },
+
+            FUNCTION => {
+                self.parse_function()
+            },
+
+            _ => self.parse_prefixexp()
+        }
+    }
+
+    /// prefixexp -> Name (('[' exp ']') | args | ('.' Name) )*
+    ///            | '(' exp ')' (('[' exp ']') | args | ('.' Name) )*
+    ///            | literal
+    /// 
+    /// args -> '(' [explist] ')' | tableconstructor | String
+    fn parse_prefixexp(&mut self) -> Result<Exp, ParseError> {
+        match self.peek().tok_type {
+            // start with grouping
+            LEFTPAREN => {
+                self.advance();
+                let mut head_exp = self.parse_expression()?;
+                consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+                loop {
+                    // (('[' exp ']') | args | '.' Name )*
+                    match self.peek().tok_type {
+                        LEFTBRACKET => {
+                            self.advance();
+                            let index = self.parse_expression()?;
+                            consume!(self.advance(), RIGHTBRACKET, RIGHTBRACKET)?;
+                            head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index) } }
+                        },
+                        DOT => {
+                            self.advance();
+                            if let NAME { value } = self.peek().tok_type {
+                                let index = Exp::Literal { value: Token::new(self.line, STRING { value })};
+                                head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index)} }
+                            } else {
+                                return Err(ParseError::new(self.peek().line, format!("<name> expected near '{}'", self.peek().tok_type)))
+                            }
+                            self.advance();
+                        }
+                        LEFTPAREN => {
+                            self.advance();
+                            let arguments = if let RIGHTPAREN = self.peek().tok_type {
+                                    None
+                                } else {
+                                    Some(self.parse_explist()?)
+                                };
+                            consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments }
+                        },
+                        LEFTBRACE => {
+                            let tableconstructor = self.parse_table_constructor()?;
+                            let args = ExpList(vec![tableconstructor]);
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
+                        },
+                        STRING { value: _ } => {
+                            let str = self.parse_literal()?;
+                            let args = ExpList(vec![str]);
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
+                        },
+                        _ => break,
+                    }
+                }
+
+                Ok(head_exp)
+            },
+
+            // start with Name
+            NAME { value } => {
+                self.advance();
+                let mut head_exp = Exp::Var { var: Var::Name { name: Name(value) } };
+
+                loop {
+                    // (('[' exp ']') | args | ('.' Name))* 
+                    match self.peek().tok_type {
+                        LEFTBRACKET => {
+                            self.advance();
+                            let index = self.parse_expression()?;
+                            consume!(self.advance(), RIGHTBRACKET, RIGHTBRACKET)?;
+                            head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index) } }
+                        },
+                        DOT => {
+                            self.advance();
+                            if let NAME { value } = self.peek().tok_type {
+                                let index = Exp::Literal { value: Token::new(self.line, STRING { value })};
+                                head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index)} }
+                            } else {
+                                return Err(ParseError::new(self.peek().line, format!("<name> expected near '{}'", self.peek().tok_type)))
+                            }
+                            self.advance();
+                        }
+                        LEFTPAREN => {
+                            self.advance();
+                            let arguments = if let RIGHTPAREN = self.peek().tok_type {
+                                None
+                            } else {
+                                Some(self.parse_explist()?)
+                            };
+                            consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments }
+                        },
+                        LEFTBRACE => {
+                            let tableconstructor = self.parse_table_constructor()?;
+                            let args = ExpList(vec![tableconstructor]);
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
+                        },
+                        STRING { value:_ } => {
+                            let str = self.parse_literal()?;
+                            let args = ExpList(vec![str]);
+                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
+                        },
+                        _ => break,
+                    }
+                }
+
+                Ok(head_exp)
+            },
+
+            _ => {
+                self.parse_literal()
+            }
+        }
+    }
+
+
+    fn parse_var(&mut self) -> Result<Var, ParseError> {
+        let exp = self.parse_prefixexp()?;
+        if let Exp::Var { var } = exp {
+            Ok(var)
+        } else {
+            unimplemented!()
+        }
+    }
     fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
         let mut explist = ExpList(Vec::new());
 
@@ -358,74 +644,44 @@ impl Parser {
         Ok(explist)
     }
 
-    fn parse_expression(&mut self) -> Result<Exp, ParseError> {
-        match self.peek().tok_type {
-            FUNCTION => {
-                // functiondef
-                self.parse_function_exp()
-            }
-
-            NAME { value: _ } => {
-                if let Some(LEFTPAREN) = self.look_ahead() {
-                    // function call
-                    self.parse_function_call()
-                } else {
-                    self.parse_logic_or()
-                }
-            }
-
-            LEFTBRACE => {
-                // table constructor
-                self.parse_table_constructor()
-            }
-
-            _ => self.parse_logic_or(),
-        }
-    }
-
-    fn parse_function_exp(&mut self) -> Result<Exp, ParseError> {
-        consume!(self.advance(), FUNCTION, FUNCTION)?;
-        consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
-        let parlist = if let RIGHTPAREN = self.peek().tok_type {
-                    None
-                } else {
-                    Some(self.parse_namelist()?)
-                };
-        consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
-        let block = self.parse_block()?;
-        consume!(self.advance(), END, END)?;
-
-        Ok(Exp::FuncExp {
-            funcbody: FuncBody { parlist, block },
-        })
-    }
-
-    fn parse_function_call(&mut self) -> Result<Exp, ParseError> {
+    fn parse_namelist(&mut self) -> Result<NameList, ParseError> {
+        let mut namelist = NameList(Vec::new());
         if let NAME { value } = self.peek().tok_type {
+            namelist.0.push(Name(value));
             self.advance();
-            consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
-            let arguments = if let RIGHTPAREN = self.peek().tok_type {
-                    None
-                } else {
-                    Some(self.parse_explist()?)
-                };
-            consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
-            Ok(Exp::FunctionCall {
-                name: Name(value),
-                arguments,
-            })
         } else {
-            Err(ParseError::new(self.line, format!("<name> expected")))
+            unimplemented!()
         }
+
+        while !self.at_end() {
+            if let COMMA = self.peek().tok_type {
+                self.advance();
+                if let NAME { value } = self.peek().tok_type {
+                    namelist.0.push(Name(value));
+                    self.advance();
+                } else {
+                    return Err(ParseError::new(
+                        self.peek().line,
+                        String::from("unexpected symbol after ','"),
+                    ));
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(namelist)
     }
+
+
 
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
         let fieldlist = if let RIGHTBRACE = self.peek().tok_type {
-                    None
-                } else {
-                    Some(self.parse_fieldlist()?)
-                };
+            None
+        } else {
+            Some(self.parse_fieldlist()?)
+        };
         consume!(self.advance(), RIGHTBRACE, RIGHTBRACE)?;
         Ok(Exp::TableConstructor { fieldlist })
     }
@@ -463,145 +719,27 @@ impl Parser {
         }
     }
 
-    fn parse_logic_or(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_logic_and()?;
-        while self.peek_logic_or() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_logic_and()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_logic_and(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_comparison()?;
-        while self.peek_logic_and() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_comparison()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_comparison(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_concat()?;
-        while self.peek_comparison() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_concat()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_concat(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_term()?;
-        while self.peek_concat() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_term()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_term(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_factor()?;
-        while self.peek_term() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_factor()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_factor(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_unary()?;
-        while self.peek_factor() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_unary()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_unary(&mut self) -> Result<Exp, ParseError> {
-        if self.peek_unary() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_unary()?;
-            Ok(Exp::Unary {
-                operator,
-                right: Box::new(right),
-            })
+    fn parse_function(&mut self) -> Result<Exp, ParseError> {
+        consume!(self.advance(), FUNCTION, FUNCTION)?;
+        consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
+        let parlist = if let RIGHTPAREN = self.peek().tok_type {
+            None
         } else {
-            self.parse_power()
-        }
+            Some(self.parse_namelist()?)
+        };
+        consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+        let block = self.parse_block()?;
+        consume!(self.advance(), END, END)?;
+
+        Ok(Exp::Function {
+            funcbody: FuncBody { parlist, block },
+        })
     }
 
-    fn parse_power(&mut self) -> Result<Exp, ParseError> {
-        let mut left = self.parse_literal()?;
-        while self.peek_power() {
-            let operator = self.peek();
-            self.advance();
-            let right = self.parse_literal()?;
-            left = Exp::Binary {
-                left: Box::new(left),
-                operator,
-                right: Box::new(right),
-            }
-        }
-
-        Ok(left)
-    }
-
-    fn parse_literal(&mut self) -> Result<Exp, ParseError> {
-        if self.peek().tok_type == LEFTPAREN {
-            self.advance();
-            let expr = self.parse_expression()?;
-            self.advance();
-            Ok(Exp::Grouping {
-                expr: Box::new(expr),
-            })
-        } else {
-            let value = self.peek();
-            self.advance();
-            Ok(Exp::Literal { value })
-        }
+    fn parse_literal(&mut self) -> Result<Exp, ParseError> { 
+        let value = self.peek();
+        self.advance();
+        Ok(Exp::Literal { value })
     }
 
     fn at_end(&self) -> bool {
@@ -684,7 +822,7 @@ impl Parser {
         }
 
         match self.peek().tok_type {
-            MUL | DIV | FLOORDIV => true,
+            MUL | DIV | FLOORDIV | MOD => true,
             _ => false,
         }
     }

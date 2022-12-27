@@ -1,7 +1,7 @@
 ### Lua Subset Grammar
 
 ```lua
-block ::= {stmt} 
+block ::= {stmt} [retstat]
 stmt ::= ';' |
         varlist '=' explist |
         functioncall |
@@ -11,9 +11,10 @@ stmt ::= ';' |
         if exp then block {elseif exp then block} [else block] end | 
         for Name '=' exp ',' exp [',' exp] do block end | 
         for namelist in explist do block end | 
-        ['local'] function Name funcbody | 
+        local function Name funcbody | 
+        function Name funcbody | 
         local namelist ['=' explist]
-        return [explist] [';']
+retstat ::= return [explist] [';']
 varlist ::= var {',' var}
 var  ::= Name | prefixexp '[' exp ']' 
 namelist ::= Name {',' Name}
@@ -39,7 +40,7 @@ Eliminate left recursions and get the following production rules
 ### Productions
 
 ```lua
-block -> stmt*
+block -> stmt* (retstat)?
 stmt -> ';' |
         varlist '=' explist | 
         functioncall |
@@ -52,14 +53,15 @@ stmt -> ';' |
         function Name funcbody |
         local function Name funcbody | 
         local namelist ('=' explist)?
-        return (explist)? (';')?
+        
 exp     -> logic_or
 logic_or -> logic_and ('or' logic_and)*
-logic_and -> equality ('and' equality)*
-comparison -> term ( ('>' | '<' | '<=' | '>=') term )*
+logic_and -> comparison ('and' comparison)*
+comparison -> concat ( ('>' | '<' | '<=' | '>=' | '==' | '~=') concat )*
+concat  -> term ('..' term)*
 term    -> factor ( ('-' | '+') factor)*
 factor  -> unary ( ('/' | '*') unary )*
-unary   -> ('!' | '-' ) unary | primary
+unary   -> (not | '-') unary | primary
 primary -> functiondef | 
            tableconstructor | 
            prefixexp |
@@ -67,8 +69,8 @@ primary -> functiondef |
 
 functiondef -> function funcbody 
 tableconstructor -> '{' (fieldlist)? '}'
-prefixexp -> Name (('[' exp ']') | args )* | 
-            '(' Exp ')' (('[' exp ']') | args )*
+prefixexp -> Name (('[' exp ']') | args | ('.' Name) )* | 
+            '(' Exp ')' (('[' exp ']') | args | ('.' Name) )*
 
 literal -> nil |
            false | 
@@ -80,6 +82,7 @@ literal -> nil |
 ### Utility Rules
 
 ```lua
+retstat -> return (explist)? (';')?
 functioncall -> prefixexp args
 varlist -> var (',' var)*
 var     -> Name |
@@ -95,3 +98,19 @@ args    -> '(' (explist)? ')' |
             tableconstructor | 
             String
 ```
+
+var -> Name |
+        prefixexp '[' exp ']' |
+        prefixexp '.' Name
+
+functioncall -> prefixexp args
+
+prefixexp -> var |
+             functioncall | 
+             '(' exp ')' 
+        
+prefixexp -> Name |
+             prefixexp '[' exp ']' |
+             prefixexp '.' Name |
+             prefixexp args |
+             '(' exp ')'

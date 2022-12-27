@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Chunk, Exp, ExpList, FieldList, FuncBody, Name, Stmt},
+    ast::{Exp, ExpList, FieldList, FuncBody, Name, Stmt, Block},
     rua::RuaError,
     token::{Token, TokenType},
     value::Value,
@@ -26,15 +26,17 @@ impl RuaError for RuntimeError {
 
 impl Interpreter {
     // input: an ast node
-    pub fn interpret(chunk: Chunk) {
-        for stmt in chunk.block.statements.iter() {
+    pub fn interpret(block: Block) {
+        for stmt in block.statements.iter() {
             Self::exec(stmt);
         }
     }
 
     fn exec(stmt: &Stmt) {
         match stmt {
-            Stmt::Assignment { local, left, right } => {}
+            Stmt::Assign {left, right } => {}
+
+            Stmt::LocalAssign { left, right } => {}
 
             Stmt::Break => {}
 
@@ -87,9 +89,9 @@ impl Interpreter {
                 operator,
                 right,
             } => Self::eval_binary(operator, left, right),
-            Exp::Grouping { expr } => Self::eval(&expr),
-            Exp::FuncExp { funcbody } => Self::eval_func_exp(funcbody),
-            Exp::FunctionCall { name, arguments } => Self::eval_func_call(name, arguments),
+            Exp::FunctionCall { prefixexp, arguments } => Self::eval_func_call(prefixexp, arguments),
+            Exp::Var { var } => todo!(),
+            Exp::Function { funcbody } => Self::eval_func_exp(funcbody),
             Exp::TableConstructor { fieldlist } => Self::eval_table(fieldlist),
         }
     }
@@ -99,7 +101,9 @@ impl Interpreter {
             TokenType::TRUE => Ok(Value::Bool { b: true }),
             TokenType::FALSE => Ok(Value::Bool { b: false }),
             TokenType::NIL => Ok(Value::Nil),
-            TokenType::NAME { value } => Ok(Value::Str { value: value.clone() }),
+            TokenType::NAME { value } => Ok(Value::Str {
+                value: value.clone(),
+            }),
             TokenType::NUMBER { value } => Ok(Value::Num { value: *value }),
             _ => unimplemented!(),
         }
@@ -110,7 +114,7 @@ impl Interpreter {
         match op.tok_type {
             TokenType::NOT => {
                 // all values except for 'nil' and 'false' are considered true
-                Ok(Value::Bool { b: !right.truthy() } )
+                Ok(Value::Bool { b: !right.truthy() })
             }
             TokenType::MINUS => {
                 if let Value::Num { value } = right {
@@ -129,9 +133,9 @@ impl Interpreter {
     }
 
     ///
-    /// Lua supports the usual arithmetic operators: 
-    /// the binary + (addition), - (subtraction), * (multiplication), / (division), % (modulo), and ^ (exponentiation); and unary - (negation). 
-    /// If the operands are numbers, or strings that can be converted to numbers (see §2.2.1), then all operations have the usual meaning. 
+    /// Lua supports the usual arithmetic operators:
+    /// the binary + (addition), - (subtraction), * (multiplication), / (division), % (modulo), and ^ (exponentiation); and unary - (negation).
+    /// If the operands are numbers, or strings that can be converted to numbers (see §2.2.1), then all operations have the usual meaning.
     /// Exponentiation works for any exponent. For instance, x^(-0.5) computes the inverse of the square root of x.
     fn eval_binary(op: &Token, left: &Exp, right: &Exp) -> Result<Value, RuntimeError> {
         let left = Self::eval(left)?;
@@ -161,7 +165,7 @@ impl Interpreter {
                 }
             }
 
-            TokenType::MINUS =>  {
+            TokenType::MINUS => {
                 let right = Self::eval(right)?;
                 match (left, right) {
                     (Value::Num { value: a }, Value::Num { value: b }) => {
@@ -181,7 +185,7 @@ impl Interpreter {
                         format!("attempt to subtract () with ()"),
                     )),
                 }
-            },
+            }
 
             TokenType::MUL => {
                 let right = Self::eval(right)?;
@@ -203,11 +207,11 @@ impl Interpreter {
                         format!("attempt to mul () with ()"),
                     )),
                 }
-            },
+            }
 
             TokenType::DIV => {
                 let right = Self::eval(right)?;
-                    match (left, right) {
+                match (left, right) {
                     (Value::Num { value: a }, Value::Num { value: b }) => {
                         Ok(Value::Num { value: a / b })
                     }
@@ -225,7 +229,7 @@ impl Interpreter {
                         format!("attempt to div () with ()"),
                     )),
                 }
-            },
+            }
 
             TokenType::FLOORDIV => {
                 todo!()
@@ -283,24 +287,29 @@ impl Interpreter {
             }
 
             TokenType::AND => {
-                // short circuit 
-                Ok(Value::Bool { b: left.truthy() && Self::eval(right)?.truthy() })
+                // short circuit
+                Ok(Value::Bool {
+                    b: left.truthy() && Self::eval(right)?.truthy(),
+                })
             }
 
             TokenType::OR => {
                 // short circuit
-                Ok(Value::Bool { b: left.truthy() || Self::eval(right)?.truthy() })
+                Ok(Value::Bool {
+                    b: left.truthy() || Self::eval(right)?.truthy(),
+                })
             }
 
             _ => unimplemented!(),
         }
     }
 
+
     fn eval_func_exp(funcbody: &FuncBody) -> Result<Value, RuntimeError> {
         todo!()
     }
 
-    fn eval_func_call(name: &Name, explist: &Option<ExpList>) -> Result<Value, RuntimeError> {
+    fn eval_func_call(prefixexp: &Exp, arguments: &Option<ExpList>) -> Result<Value, RuntimeError> {
         todo!()
     }
 
@@ -309,10 +318,10 @@ impl Interpreter {
     }
 
     /// if the the types are different, the result is false
-    /// 
+    ///
     /// if they are both numbers or strings, compare in the usual way
-    /// 
-    /// functions and tables are considered equal only if they are the same object 
+    ///
+    /// functions and tables are considered equal only if they are the same object
     /// every time you create a new object, this new object is different from the prior ones
     fn equal(left: &Value, right: &Value) -> bool {
         match (left, right) {
@@ -323,7 +332,7 @@ impl Interpreter {
     }
 
     /// if both are numbers or strings, compare the normal way (value and alphabetic order)
-    /// 
+    ///
     /// comparison a > b is translated to b < a and a >= b translated to b <= a
     fn less(left: &Value, right: &Value, line: usize) -> Result<Value, RuntimeError> {
         match (left, right) {
@@ -337,7 +346,7 @@ impl Interpreter {
     }
 
     /// if both are numbers or strings, compare the normal way (value and alphabetic order)
-    /// 
+    ///
     /// comparison a > b is translated to b < a and a >= b translated to b <= a
     fn less_equal(left: &Value, right: &Value, line: usize) -> Result<Value, RuntimeError> {
         match (left, right) {
@@ -351,14 +360,14 @@ impl Interpreter {
     }
 
     /// if both are numbers or strings, compare the normal way (value and alphabetic order)
-    /// 
+    ///
     /// comparison a > b is translated to b < a and a >= b translated to b <= a
     fn greater(left: &Value, right: &Value, line: usize) -> Result<Value, RuntimeError> {
         Self::less_equal(right, left, line)
     }
 
     /// if both are numbers or strings, compare the normal way (value and alphabetic order)
-    /// 
+    ///
     /// comparison a > b is translated to b < a and a >= b translated to b <= a
     fn greater_equal(left: &Value, right: &Value, line: usize) -> Result<Value, RuntimeError> {
         Self::less(right, left, line)

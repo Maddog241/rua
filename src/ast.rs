@@ -2,16 +2,16 @@ use std::fmt;
 
 use crate::token::Token;
 
-// chunk
-pub struct Chunk {
-    pub block: Block,
-}
+// // chunk
+// pub struct Chunk {
+//     pub block: Block,
+// }
 
-impl fmt::Display for Chunk {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.block)
-    }
-}
+// impl fmt::Display for Chunk {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         write!(f, "{}", self.block)
+//     }
+// }
 
 // block
 pub struct Block {
@@ -28,10 +28,13 @@ impl fmt::Display for Block {
 
 // statement
 pub enum Stmt {
-    Assignment {
-        local: bool,
-        left: NameList,
+    Assign {
+        left: VarList,
         right: ExpList,
+    },
+    LocalAssign {
+        left: NameList,
+        right: Option<ExpList>,
     },
     Break,
     DoBlockEnd {
@@ -69,18 +72,23 @@ pub enum Stmt {
         func_call: Exp,
     },
     RetStmt {
-        explist: ExpList,
+        explist: Option<ExpList>,
     },
 }
 
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Assignment { local, left, right } => {
-                if *local {
-                    write!(f, "local {} = {}\n", left, right)
-                } else {
-                    write!(f, "{} = {}\n", left, right)
+            Self::Assign { left, right } => {
+                write!(f, "{} = {}\n", left, right)
+            }
+
+            Self::LocalAssign { left, right } => {
+                match right {
+                    Some(explist) => {
+                        write!(f, "local {} = {}\n", left, explist)
+                    } 
+                    None => write!(f, "local {}", left)
                 }
             }
 
@@ -105,16 +113,20 @@ impl fmt::Display for Stmt {
                 if *local {
                     match parlist {
                         Some(namelist) => {
-                            write!(f, "\nFunctionDecl: local {}({}){{\n{}}}\n", name, namelist, body)
-                        },
-                        None => write!(f, "\nFunctionDecl: local {}(){{\n{}}}\n", name, body)
+                            write!(
+                                f,
+                                "\nFunctionDecl: local {}({}){{\n{}}}\n",
+                                name, namelist, body
+                            )
+                        }
+                        None => write!(f, "\nFunctionDecl: local {}(){{\n{}}}\n", name, body),
                     }
                 } else {
                     match parlist {
                         Some(namelist) => {
                             write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, namelist, body)
-                        },
-                        None => write!(f, "\nFunctionDecl: {}(){{\n{}}}\n", name, body)
+                        }
+                        None => write!(f, "\nFunctionDecl: {}(){{\n{}}}\n", name, body),
                     }
                 }
             }
@@ -125,7 +137,7 @@ impl fmt::Display for Stmt {
                 elseif_branches,
                 option_else_branch,
             } => {
-                write!(f, "\nif({}) {{\n{}}} ", condition, then_branch)?;
+                write!(f, "if({}) {{\n{}}} ", condition, then_branch)?;
                 for (condition, elseif_branch) in elseif_branches.iter() {
                     write!(f, "elseif({}){{\n{}}}", condition, elseif_branch)?;
                 }
@@ -171,9 +183,54 @@ impl fmt::Display for Stmt {
             }
 
             Self::RetStmt { explist } => {
-                write!(f, "return {}\n", explist)
+                match explist {
+                    Some(list) => {
+                        write!(f, "return {}\n", list)
+                    },
+                    None => write!(f, "return \n")
+                }
             }
         }
+    }
+}
+
+pub enum Var {
+    Name {
+        name: Name,
+    },
+    TableIndex {
+        prefixexp: Box<Exp>,
+        exp: Box<Exp>,
+    }
+}
+
+pub struct VarList {
+    pub vars: Vec<Var>,
+}
+
+impl fmt::Display for Var {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Name { name } => write!(f, "{}", name),
+            Self::TableIndex { prefixexp, exp } => write!(f, "{}[{}]", prefixexp, exp),
+        }
+    }
+}
+
+impl fmt::Display for VarList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut count = 0;
+        write!(f, "Varlist(")?;
+        self.vars.iter().fold(Ok(()), |result, name| {
+            result.and_then(|_| {
+                count += 1;
+                if count == self.vars.len() {
+                    write!(f, "{})", name)
+                } else {
+                    write!(f, "{}, ", name)
+                }
+            })
+        })
     }
 }
 
@@ -219,20 +276,22 @@ pub enum Exp {
         operator: Token,
         right: Box<Exp>,
     },
-    Grouping {
-        expr: Box<Exp>,
-    },
-    FuncExp {
+    Function {
         funcbody: FuncBody,
     },
+    // prefix exp
+    Var {
+        var: Var,
+    },
     FunctionCall {
-        name: Name,
+        prefixexp: Box<Exp>,
         arguments: Option<ExpList>,
     },
     TableConstructor {
         fieldlist: Option<FieldList>,
     },
 }
+
 
 pub struct ExpList(pub Vec<Exp>);
 
@@ -246,25 +305,26 @@ impl fmt::Display for Exp {
                 operator,
                 right,
             } => write!(f, "({} {} {})", left, operator.tok_type, right),
-            Self::Grouping { expr } => write!(f, "({})", expr),
-            Self::FuncExp { funcbody } => write!(f, "{}", funcbody),
-            Self::FunctionCall { name, arguments } => {
+            Self::Function { funcbody } => write!(f, "{}", funcbody),
+            Self::Var { var } => write!(f, "{}", var),
+            Self::FunctionCall { prefixexp, arguments } => {
                 match arguments {
-                    Some(arguments) => write!(f, "FunctionCall: {}({})", name, arguments),
-                    None => write!(f, "FunctionCall: {}()", name)
+                    Some(args) => {
+                        write!(f, "{}({})", prefixexp, args)
+                    },
+                    None => write!(f, "{}()", prefixexp)
                 }
             }
-            Self::TableConstructor { fieldlist } => {
-                match fieldlist {
-                    Some(fieldlist) => {
-                        write!(f, "Table{{{}}}", fieldlist)
-                    }
-                    None => write!(f, "Table{{}}")
+            Self::TableConstructor { fieldlist } => match fieldlist {
+                Some(fieldlist) => {
+                    write!(f, "Table{{{}}}", fieldlist)
                 }
-            }
+                None => write!(f, "Table{{}}"),
+            },
         }
     }
 }
+
 
 impl fmt::Display for ExpList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -293,7 +353,7 @@ impl fmt::Display for FuncBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.parlist {
             Some(parlist) => write!(f, "function({}){{{}}}", parlist, self.block),
-            None => write!(f, "function(){{{}}}", self.block)
+            None => write!(f, "function(){{{}}}", self.block),
         }
     }
 }

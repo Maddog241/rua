@@ -133,10 +133,8 @@ impl<'a> Lexer<'a> {
                         tokens.push(Token::new(self.line, TokenType::DOTDOT));
                         self.advance(2);
                     } else {
-                        return Err(LexError::new(
-                            self.line,
-                            String::from("unexpected symbol '.'"),
-                        ));
+                        tokens.push(Token::new(self.line, TokenType::DOT));
+                        self.advance(1);
                     }
                 }
                 b';' => {
@@ -339,20 +337,15 @@ impl<'a> Lexer<'a> {
         let start = self.current;
 
         while !self.at_end() {
-            if self.source[self.current] == b'-' && self.current + 3 < self.source.len() {
+            if self.source[self.current] == b']' {
                 // check end of string
-                if self.source[self.current + 1] != b'-'
-                    || self.source[self.current + 2] != b']'
-                    || self.source[self.current + 3] != b']'
-                {
-                    // not the termination of comment
+                if let Some(b']') = self.look_ahead() {
+                    self.advance(2);
+                    closed = true;
+                    break;
+                } else {
                     self.advance(1);
-                    continue;
                 }
-                // termination of the comment
-                self.advance(4);
-                closed = true;
-                break;
             } else {
                 if self.source[self.current] == b'\n' {
                     self.line += 1;
