@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Exp, ExpList, FieldList, FuncBody, Name, Stmt, Block, VarList, NameList},
+    ast::{Exp, ExpList, FieldList, FuncBody, Name, Stmt, Block, VarList, NameList, Var},
     rua::RuaError,
     token::{Token, TokenType},
     value::Value,
@@ -58,10 +58,11 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&mut self, block: Block) {
+    pub fn interpret(&mut self, block: Block) -> Result<(), RuntimeError>{
         for stmt in block.statements {
-            self.exec(stmt);
+            self.exec(stmt)?;
         }
+        Ok(())
     }
 
     fn exec(&mut self, stmt: Stmt) -> Result<(), RuntimeError> {
@@ -81,7 +82,10 @@ impl Interpreter {
                 body,
             } => todo!(),
 
-            Stmt::FunctionCall { func_call } => self.exec_functioncall(func_call),
+            Stmt::FunctionCall { prefixexp, arguments } => {
+                self.eval_func_call(&prefixexp, &arguments)?;
+                Ok(())
+            }
 
             Stmt::GenericFor {
                 namelist,
@@ -111,7 +115,34 @@ impl Interpreter {
     }
 
     fn exec_assign(&mut self, left: VarList, right: ExpList) -> Result<(), RuntimeError> {
-        todo!()
+        let n = left.vars.len();
+        let mut values = Vec::new();
+        for i in 0..n {
+            if i < right.0.len() {
+                values.push(self.eval(&right.0[i])?);
+            } else {
+                values.push(Value::Nil);
+            }
+        }
+
+        for (i, value) in values.into_iter().enumerate() {
+            match &left.vars[i] {
+                Var::Name { name } => {
+                    self.env_stack[self.stack_top].define(&name.0, value)
+                },
+                Var::TableIndex { prefixexp, exp } => {
+                    let table_name = self.eval(&prefixexp)?;
+                    if let Value::Table {  } = table_name {
+
+                    } else {
+                        // here the line number is incorrect
+                        return Err(RuntimeError::new(0, format!("attempt to index a () value")))
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn exec_local_assign(&mut self, left: NameList, right: Option<ExpList>) -> Result<(), RuntimeError> {
@@ -133,17 +164,13 @@ impl Interpreter {
                     }
                 }
 
-                for i in 0..n {
-                    self.env_stack[self.stack_top].define(&left.0[i].0, values[i].clone())
+                for (i, value) in values.into_iter().enumerate() {
+                    self.env_stack[self.stack_top].define(&left.0[i].0, value)
                 }
 
                 Ok(())
             }
         }
-    }
-
-    fn exec_functioncall(&mut self, func_call: Exp) -> Result<(), RuntimeError> {
-        todo!()
     }
 
     fn eval(&mut self, exp: &Exp) -> Result<Value, RuntimeError> {
@@ -159,6 +186,7 @@ impl Interpreter {
             Exp::Var { var } => todo!(),
             Exp::Function { funcbody } => self.eval_func_exp(funcbody),
             Exp::TableConstructor { fieldlist } => self.eval_table(fieldlist),
+            Exp::Grouping { exp } => self.eval(exp),
         }
     }
 

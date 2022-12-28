@@ -103,7 +103,7 @@ impl Parser {
                         },
                         // functioncall
                         Exp::FunctionCall { prefixexp, arguments } => {
-                            statements.push(Stmt::FunctionCall { func_call: Exp::FunctionCall { prefixexp, arguments } })
+                            statements.push(Stmt::FunctionCall { prefixexp, arguments } )
                         },
                         // grouping, error
                         _ => return Err(ParseError::new(self.peek().line, format!("syntax error near {}", self.peek().tok_type))),
@@ -517,6 +517,7 @@ impl Parser {
                 self.advance();
                 let mut head_exp = self.parse_expression()?;
                 consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+                let mut flag = false;
                 loop {
                     // (('[' exp ']') | args | '.' Name )*
                     match self.peek().tok_type {
@@ -558,9 +559,17 @@ impl Parser {
                         },
                         _ => break,
                     }
+                    flag = true;
                 }
 
-                Ok(head_exp)
+                if flag {
+                    // it is not a grouping
+                    Ok(head_exp)
+                } else {
+                    // this is a grouping
+                    Ok(Exp::Grouping { exp: Box::new(head_exp) })
+                }
+
             },
 
             // start with Name
@@ -626,7 +635,7 @@ impl Parser {
         if let Exp::Var { var } = exp {
             Ok(var)
         } else {
-            unimplemented!()
+            Err(ParseError::new(self.line, format!("syntax error near '{}'", self.peek().tok_type)))
         }
     }
     fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
@@ -737,9 +746,22 @@ impl Parser {
     }
 
     fn parse_literal(&mut self) -> Result<Exp, ParseError> { 
-        let value = self.peek();
-        self.advance();
-        Ok(Exp::Literal { value })
+        let tok = self.peek();
+        match tok.tok_type {
+            NUMBER { value: _ } => {
+                self.advance();
+                Ok( Exp::Literal { value: tok })
+            },
+            STRING { value: _ } => {
+                self.advance();
+                Ok( Exp::Literal { value: tok })
+            },
+            NIL | TRUE | FALSE => {
+                self.advance();
+                Ok( Exp::Literal { value: tok })
+            }
+            _ => Err(ParseError::new(tok.line, format!("unexpected symbol near '{}'", tok.tok_type)))
+        }
     }
 
     fn at_end(&self) -> bool {

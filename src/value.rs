@@ -1,14 +1,20 @@
 use std::fmt;
 
-use crate::ast::Block;
+use crate::ast::{Block, Name, NameList};
 
-#[derive(Clone)]
 pub enum Value {
     Bool { b: bool },
     Str { value: String },
     Num { value: f64 },
     Nil,
-    Function {func: fn(block: Block) -> Option<Value> },
+    Function {
+        name: Name, 
+        parameters: NameList, 
+        body: Block
+    },
+    Table {
+
+    }
 }
 
 impl Value {
@@ -28,7 +34,8 @@ impl fmt::Display for Value {
             Self::Nil => write!(f, "nil"),
             Self::Num { value } => write!(f, "{}", value),
             Self::Str { value } => write!(f, "'{}'", value),
-            Self::Function { func } => write!(f, "{:p}", func),
+            Self::Function { name, parameters, body:_ } => write!(f, "function {}({})", name, parameters),
+            Self::Table {  } => write!(f, "")
         }
     }
 }

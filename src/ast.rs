@@ -69,7 +69,8 @@ pub enum Stmt {
         body: Block,
     },
     FunctionCall {
-        func_call: Exp,
+        prefixexp: Box<Exp>,
+        arguments: Option<ExpList>,
     },
     RetStmt {
         explist: Option<ExpList>,
@@ -92,8 +93,13 @@ impl fmt::Display for Stmt {
                 }
             }
 
-            Self::FunctionCall { func_call } => {
-                write!(f, "{}\n", func_call)
+            Self::FunctionCall { prefixexp, arguments } => {
+                match arguments {
+                    Some(args) => {
+                        write!(f, "{}({})", prefixexp, args)
+                    },
+                    None => write!(f, "{}()", prefixexp)
+                }
             }
 
             Self::Break => {
@@ -235,6 +241,7 @@ impl fmt::Display for VarList {
 }
 
 // name and namelist
+#[derive(PartialEq)]
 pub struct Name(pub String);
 pub struct NameList(pub Vec<Name>);
 
@@ -287,6 +294,9 @@ pub enum Exp {
         prefixexp: Box<Exp>,
         arguments: Option<ExpList>,
     },
+    Grouping {
+        exp: Box<Exp>,
+    },
     TableConstructor {
         fieldlist: Option<FieldList>,
     },
@@ -315,6 +325,7 @@ impl fmt::Display for Exp {
                     None => write!(f, "{}()", prefixexp)
                 }
             }
+            Self::Grouping { exp } => write!(f, "{}", exp),
             Self::TableConstructor { fieldlist } => match fieldlist {
                 Some(fieldlist) => {
                     write!(f, "Table{{{}}}", fieldlist)

@@ -25,7 +25,10 @@ fn main() {
         Ok(tokens) => match program.parse(tokens) {
             Ok(block) => {
                 let mut interpreter = Interpreter::new();
-                interpreter.interpret(block);
+                match interpreter.interpret(block) {
+                    Ok(()) => {}
+                    Err(e) => e.report(&args[1])
+                }
             }
             Err(e) => {
                 e.report(&args[1]);
