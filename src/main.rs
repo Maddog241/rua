@@ -9,6 +9,7 @@ mod value;
 use std::io::Write;
 use std::{env, io, process::exit};
 
+use interpreter::Interpreter;
 use rua::{Rua, RuaError};
 
 fn main() {
@@ -22,8 +23,9 @@ fn main() {
 
     match program.lex() {
         Ok(tokens) => match program.parse(tokens) {
-            Ok(chunk) => {
-                println!("{}", chunk);
+            Ok(block) => {
+                let mut interpreter = Interpreter::new();
+                interpreter.interpret(block);
             }
             Err(e) => {
                 e.report(&args[1]);
