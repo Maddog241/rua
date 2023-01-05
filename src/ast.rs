@@ -14,6 +14,7 @@ use crate::token::Token;
 // }
 
 // block
+#[derive(Clone)]
 pub struct Block {
     pub statements: Vec<Stmt>,
 }
@@ -27,6 +28,7 @@ impl fmt::Display for Block {
 }
 
 // statement
+#[derive(Clone)]
 pub enum Stmt {
     Assign {
         left: VarList,
@@ -34,7 +36,7 @@ pub enum Stmt {
     },
     LocalAssign {
         left: NameList,
-        right: Option<ExpList>,
+        right: ExpList,
     },
     Break,
     DoBlockEnd {
@@ -65,15 +67,15 @@ pub enum Stmt {
     FuncDecl {
         local: bool,
         name: Name,
-        parlist: Option<NameList>,
+        parlist: NameList,
         body: Block,
     },
     FunctionCall {
         prefixexp: Box<Exp>,
-        arguments: Option<ExpList>,
+        arguments: ExpList,
     },
     RetStmt {
-        explist: Option<ExpList>,
+        explist: ExpList,
     },
 }
 
@@ -85,21 +87,18 @@ impl fmt::Display for Stmt {
             }
 
             Self::LocalAssign { left, right } => {
-                match right {
-                    Some(explist) => {
-                        write!(f, "local {} = {}\n", left, explist)
-                    } 
-                    None => write!(f, "local {}", left)
+                if right.0.is_empty() {
+                    write!(f, "local {}\n", left)
+                } else {
+                    write!(f, "local {} = {}\n", left, right)
                 }
             }
 
-            Self::FunctionCall { prefixexp, arguments } => {
-                match arguments {
-                    Some(args) => {
-                        write!(f, "{}({})", prefixexp, args)
-                    },
-                    None => write!(f, "{}()", prefixexp)
-                }
+            Self::FunctionCall {
+                prefixexp,
+                arguments,
+            } => {
+                write!(f, "{}({})\n", prefixexp, arguments)
             }
 
             Self::Break => {
@@ -117,23 +116,13 @@ impl fmt::Display for Stmt {
                 body,
             } => {
                 if *local {
-                    match parlist {
-                        Some(namelist) => {
-                            write!(
-                                f,
-                                "\nFunctionDecl: local {}({}){{\n{}}}\n",
-                                name, namelist, body
-                            )
-                        }
-                        None => write!(f, "\nFunctionDecl: local {}(){{\n{}}}\n", name, body),
-                    }
+                    write!(
+                        f,
+                        "\nFunctionDecl: local {}({}){{\n{}}}\n",
+                        name, parlist, body
+                    )
                 } else {
-                    match parlist {
-                        Some(namelist) => {
-                            write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, namelist, body)
-                        }
-                        None => write!(f, "\nFunctionDecl: {}(){{\n{}}}\n", name, body),
-                    }
+                    write!(f, "\nFunctionDecl: {}({}){{\n{}}}\n", name, parlist, body)
                 }
             }
 
@@ -189,27 +178,19 @@ impl fmt::Display for Stmt {
             }
 
             Self::RetStmt { explist } => {
-                match explist {
-                    Some(list) => {
-                        write!(f, "return {}\n", list)
-                    },
-                    None => write!(f, "return \n")
-                }
+                write!(f, "return {}\n", explist)
             }
         }
     }
 }
 
+#[derive(Clone)]
 pub enum Var {
-    Name {
-        name: Name,
-    },
-    TableIndex {
-        prefixexp: Box<Exp>,
-        exp: Box<Exp>,
-    }
+    Name { name: Name },
+    TableIndex { prefixexp: Box<Exp>, exp: Box<Exp> },
 }
 
+#[derive(Clone)]
 pub struct VarList {
     pub vars: Vec<Var>,
 }
@@ -241,15 +222,10 @@ impl fmt::Display for VarList {
 }
 
 // name and namelist
-#[derive(PartialEq)]
-pub struct Name(pub String);
-pub struct NameList(pub Vec<Name>);
+pub type Name = String;
 
-impl fmt::Display for Name {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+#[derive(Clone)]
+pub struct NameList(pub Vec<Name>);
 
 impl fmt::Display for NameList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -269,6 +245,7 @@ impl fmt::Display for NameList {
 }
 
 // expression and explist
+#[derive(Clone)]
 pub enum Exp {
     Literal {
         // nil, false, true, numeral, literal string
@@ -292,7 +269,7 @@ pub enum Exp {
     },
     FunctionCall {
         prefixexp: Box<Exp>,
-        arguments: Option<ExpList>,
+        arguments: ExpList,
     },
     Grouping {
         exp: Box<Exp>,
@@ -302,7 +279,7 @@ pub enum Exp {
     },
 }
 
-
+#[derive(Clone)]
 pub struct ExpList(pub Vec<Exp>);
 
 impl fmt::Display for Exp {
@@ -317,13 +294,11 @@ impl fmt::Display for Exp {
             } => write!(f, "({} {} {})", left, operator.tok_type, right),
             Self::Function { funcbody } => write!(f, "{}", funcbody),
             Self::Var { var } => write!(f, "{}", var),
-            Self::FunctionCall { prefixexp, arguments } => {
-                match arguments {
-                    Some(args) => {
-                        write!(f, "{}({})", prefixexp, args)
-                    },
-                    None => write!(f, "{}()", prefixexp)
-                }
+            Self::FunctionCall {
+                prefixexp,
+                arguments,
+            } => {
+                write!(f, "{}({})", prefixexp, arguments)
             }
             Self::Grouping { exp } => write!(f, "{}", exp),
             Self::TableConstructor { fieldlist } => match fieldlist {
@@ -335,7 +310,6 @@ impl fmt::Display for Exp {
         }
     }
 }
-
 
 impl fmt::Display for ExpList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -355,6 +329,7 @@ impl fmt::Display for ExpList {
 }
 
 // funcbody
+#[derive(Clone)]
 pub struct FuncBody {
     pub parlist: Option<NameList>,
     pub block: Block,
@@ -370,11 +345,13 @@ impl fmt::Display for FuncBody {
 }
 
 // field and fieldlist
+#[derive(Clone)]
 pub struct Field {
     pub name: Option<Name>,
     pub exp: Exp,
 }
 
+#[derive(Clone)]
 pub struct FieldList {
     pub fields: Vec<Field>,
 }

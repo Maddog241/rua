@@ -1,9 +1,10 @@
 use std::{fs::read, process::exit};
 
 use crate::{
+    ast::Block,
     lexer::{LexError, Lexer},
     parser::{ParseError, Parser},
-    token::Token, ast::Block,
+    token::Token,
 };
 
 pub struct Rua {

@@ -1,4 +1,5 @@
 mod ast;
+mod environment;
 mod interpreter;
 mod lexer;
 mod parser;
@@ -25,9 +26,9 @@ fn main() {
         Ok(tokens) => match program.parse(tokens) {
             Ok(block) => {
                 let mut interpreter = Interpreter::new();
-                match interpreter.interpret(block) {
+                match interpreter.exec_block(&block) {
                     Ok(()) => {}
-                    Err(e) => e.report(&args[1])
+                    Err(e) => e.report(&args[1]),
                 }
             }
             Err(e) => {

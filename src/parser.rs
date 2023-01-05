@@ -1,5 +1,5 @@
 use crate::{
-    ast::{Block, Exp, ExpList, Field, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
+    ast::{Block, Exp, ExpList, Field, FieldList, FuncBody, NameList, Stmt, Var, VarList},
     rua::RuaError,
     token::{
         Token,
@@ -16,7 +16,7 @@ macro_rules! consume {
             Err(ParseError::new(
                 tok.line,
                 format!(
-                    "unexpected token {}, expect {}",
+                    "unexpected token '{}', expect '{}'",
                     tok.tok_type, $expected_expr
                 ),
             ))
@@ -100,13 +100,22 @@ impl Parser {
                                 left: VarList { vars },
                                 right: explist,
                             })
-                        },
+                        }
                         // functioncall
-                        Exp::FunctionCall { prefixexp, arguments } => {
-                            statements.push(Stmt::FunctionCall { prefixexp, arguments } )
-                        },
+                        Exp::FunctionCall {
+                            prefixexp,
+                            arguments,
+                        } => statements.push(Stmt::FunctionCall {
+                            prefixexp,
+                            arguments,
+                        }),
                         // grouping, error
-                        _ => return Err(ParseError::new(self.peek().line, format!("syntax error near {}", self.peek().tok_type))),
+                        _ => {
+                            return Err(ParseError::new(
+                                self.peek().line,
+                                format!("syntax error near {}", self.peek().tok_type),
+                            ))
+                        }
                     }
                 }
 
@@ -181,12 +190,15 @@ impl Parser {
 
             Ok(Stmt::LocalAssign {
                 left: namelist,
-                right: Some(explist),
+                right: explist,
             })
         } else {
-            Ok(Stmt::LocalAssign { left: namelist, right: None })
+            Ok(Stmt::LocalAssign {
+                left: namelist,
+                right: ExpList(vec![]),
+            })
         }
-   }
+    }
 
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
         consume!(self.advance(), WHILE, WHILE)?;
@@ -265,7 +277,7 @@ impl Parser {
                         consume!(self.advance(), END, END)?;
 
                         Ok(Stmt::NumericFor {
-                            name: Name(value),
+                            name: value,
                             start,
                             end,
                             step,
@@ -304,19 +316,21 @@ impl Parser {
         match self.peek().tok_type {
             SEMICOLON => {
                 self.advance();
-                Ok(Stmt::RetStmt { explist: None })
+                Ok(Stmt::RetStmt {
+                    explist: ExpList(vec![]),
+                })
             }
 
-            END | ELSE | ELSEIF => {
-                Ok(Stmt::RetStmt { explist: None })
-            }
+            END | ELSE | ELSEIF => Ok(Stmt::RetStmt {
+                explist: ExpList(vec![]),
+            }),
 
             _ => {
                 let explist = self.parse_explist()?;
                 if let SEMICOLON = self.peek().tok_type {
-                        self.advance();
+                    self.advance();
                 }
-                Ok(Stmt::RetStmt { explist: Some(explist) })
+                Ok(Stmt::RetStmt { explist })
             }
         }
     }
@@ -328,16 +342,16 @@ impl Parser {
                 self.advance();
                 consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
                 let parlist = if let RIGHTPAREN = self.peek().tok_type {
-                    None
+                    NameList(vec![])
                 } else {
-                    Some(self.parse_namelist()?)
+                    self.parse_namelist()?
                 };
                 consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
                 let body = self.parse_block()?;
                 consume!(self.advance(), END, END)?;
                 Ok(Stmt::FuncDecl {
                     local,
-                    name: Name(value),
+                    name: value,
                     parlist,
                     body,
                 })
@@ -352,16 +366,11 @@ impl Parser {
         }
     }
 
-
-
-
-
     // expressions
 
     /// exp -> logic_or
     fn parse_expression(&mut self) -> Result<Exp, ParseError> {
         self.parse_logic_or()
-        
     }
 
     /// logic_or -> logic_and ('or' logic_and)*
@@ -493,22 +502,18 @@ impl Parser {
     /// primary -> functiondef | tableconstructor | prefixexp
     fn parse_primary(&mut self) -> Result<Exp, ParseError> {
         match self.peek().tok_type {
-            LEFTBRACE => {
-                self.parse_table_constructor()
-            },
+            LEFTBRACE => self.parse_table_constructor(),
 
-            FUNCTION => {
-                self.parse_function()
-            },
+            FUNCTION => self.parse_function(),
 
-            _ => self.parse_prefixexp()
+            _ => self.parse_prefixexp(),
         }
     }
 
     /// prefixexp -> Name (('[' exp ']') | args | ('.' Name) )*
     ///            | '(' exp ')' (('[' exp ']') | args | ('.' Name) )*
     ///            | literal
-    /// 
+    ///
     /// args -> '(' [explist] ')' | tableconstructor | String
     fn parse_prefixexp(&mut self) -> Result<Exp, ParseError> {
         match self.peek().tok_type {
@@ -525,38 +530,62 @@ impl Parser {
                             self.advance();
                             let index = self.parse_expression()?;
                             consume!(self.advance(), RIGHTBRACKET, RIGHTBRACKET)?;
-                            head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index) } }
-                        },
+                            head_exp = Exp::Var {
+                                var: Var::TableIndex {
+                                    prefixexp: Box::new(head_exp),
+                                    exp: Box::new(index),
+                                },
+                            }
+                        }
                         DOT => {
                             self.advance();
                             if let NAME { value } = self.peek().tok_type {
-                                let index = Exp::Literal { value: Token::new(self.line, STRING { value })};
-                                head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index)} }
+                                let index = Exp::Literal {
+                                    value: Token::new(self.line, STRING { value }),
+                                };
+                                head_exp = Exp::Var {
+                                    var: Var::TableIndex {
+                                        prefixexp: Box::new(head_exp),
+                                        exp: Box::new(index),
+                                    },
+                                }
                             } else {
-                                return Err(ParseError::new(self.peek().line, format!("<name> expected near '{}'", self.peek().tok_type)))
+                                return Err(ParseError::new(
+                                    self.peek().line,
+                                    format!("<name> expected near '{}'", self.peek().tok_type),
+                                ));
                             }
                             self.advance();
                         }
                         LEFTPAREN => {
                             self.advance();
                             let arguments = if let RIGHTPAREN = self.peek().tok_type {
-                                    None
-                                } else {
-                                    Some(self.parse_explist()?)
-                                };
+                                ExpList(vec![])
+                            } else {
+                                self.parse_explist()?
+                            };
                             consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments }
-                        },
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
                         LEFTBRACE => {
                             let tableconstructor = self.parse_table_constructor()?;
-                            let args = ExpList(vec![tableconstructor]);
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
-                        },
+                            let arguments = ExpList(vec![tableconstructor]);
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
                         STRING { value: _ } => {
                             let str = self.parse_literal()?;
-                            let args = ExpList(vec![str]);
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
-                        },
+                            let arguments = ExpList(vec![str]);
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
                         _ => break,
                     }
                     flag = true;
@@ -567,75 +596,102 @@ impl Parser {
                     Ok(head_exp)
                 } else {
                     // this is a grouping
-                    Ok(Exp::Grouping { exp: Box::new(head_exp) })
+                    Ok(Exp::Grouping {
+                        exp: Box::new(head_exp),
+                    })
                 }
-
-            },
+            }
 
             // start with Name
             NAME { value } => {
                 self.advance();
-                let mut head_exp = Exp::Var { var: Var::Name { name: Name(value) } };
+                let mut head_exp = Exp::Var {
+                    var: Var::Name { name: value },
+                };
 
                 loop {
-                    // (('[' exp ']') | args | ('.' Name))* 
+                    // (('[' exp ']') | args | ('.' Name))*
                     match self.peek().tok_type {
                         LEFTBRACKET => {
                             self.advance();
                             let index = self.parse_expression()?;
                             consume!(self.advance(), RIGHTBRACKET, RIGHTBRACKET)?;
-                            head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index) } }
-                        },
+                            head_exp = Exp::Var {
+                                var: Var::TableIndex {
+                                    prefixexp: Box::new(head_exp),
+                                    exp: Box::new(index),
+                                },
+                            }
+                        }
                         DOT => {
                             self.advance();
                             if let NAME { value } = self.peek().tok_type {
-                                let index = Exp::Literal { value: Token::new(self.line, STRING { value })};
-                                head_exp = Exp::Var { var: Var::TableIndex { prefixexp: Box::new(head_exp), exp: Box::new(index)} }
+                                let index = Exp::Literal {
+                                    value: Token::new(self.line, STRING { value }),
+                                };
+                                head_exp = Exp::Var {
+                                    var: Var::TableIndex {
+                                        prefixexp: Box::new(head_exp),
+                                        exp: Box::new(index),
+                                    },
+                                }
                             } else {
-                                return Err(ParseError::new(self.peek().line, format!("<name> expected near '{}'", self.peek().tok_type)))
+                                return Err(ParseError::new(
+                                    self.peek().line,
+                                    format!("<name> expected near '{}'", self.peek().tok_type),
+                                ));
                             }
                             self.advance();
                         }
                         LEFTPAREN => {
                             self.advance();
                             let arguments = if let RIGHTPAREN = self.peek().tok_type {
-                                None
+                                ExpList(vec![])
                             } else {
-                                Some(self.parse_explist()?)
+                                self.parse_explist()?
                             };
                             consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments }
-                        },
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
                         LEFTBRACE => {
                             let tableconstructor = self.parse_table_constructor()?;
-                            let args = ExpList(vec![tableconstructor]);
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
-                        },
-                        STRING { value:_ } => {
+                            let arguments = ExpList(vec![tableconstructor]);
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
+                        STRING { value: _ } => {
                             let str = self.parse_literal()?;
-                            let args = ExpList(vec![str]);
-                            head_exp = Exp::FunctionCall { prefixexp: Box::new(head_exp), arguments: Some(args) }
-                        },
+                            let arguments = ExpList(vec![str]);
+                            head_exp = Exp::FunctionCall {
+                                prefixexp: Box::new(head_exp),
+                                arguments,
+                            }
+                        }
                         _ => break,
                     }
                 }
 
                 Ok(head_exp)
-            },
-
-            _ => {
-                self.parse_literal()
             }
+
+            _ => self.parse_literal(),
         }
     }
-
 
     fn parse_var(&mut self) -> Result<Var, ParseError> {
         let exp = self.parse_prefixexp()?;
         if let Exp::Var { var } = exp {
             Ok(var)
         } else {
-            Err(ParseError::new(self.line, format!("syntax error near '{}'", self.peek().tok_type)))
+            Err(ParseError::new(
+                self.line,
+                format!("syntax error near '{}'", self.peek().tok_type),
+            ))
         }
     }
     fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
@@ -656,7 +712,7 @@ impl Parser {
     fn parse_namelist(&mut self) -> Result<NameList, ParseError> {
         let mut namelist = NameList(Vec::new());
         if let NAME { value } = self.peek().tok_type {
-            namelist.0.push(Name(value));
+            namelist.0.push(value);
             self.advance();
         } else {
             unimplemented!()
@@ -666,7 +722,7 @@ impl Parser {
             if let COMMA = self.peek().tok_type {
                 self.advance();
                 if let NAME { value } = self.peek().tok_type {
-                    namelist.0.push(Name(value));
+                    namelist.0.push(value);
                     self.advance();
                 } else {
                     return Err(ParseError::new(
@@ -681,8 +737,6 @@ impl Parser {
 
         Ok(namelist)
     }
-
-
 
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
@@ -713,7 +767,7 @@ impl Parser {
                     self.advance();
                     consume!(self.advance(), EQUAL, EQUAL)?;
                     Ok(Field {
-                        name: Some(Name(value)),
+                        name: Some(value),
                         exp: self.parse_expression()?,
                     })
                 }
@@ -745,22 +799,25 @@ impl Parser {
         })
     }
 
-    fn parse_literal(&mut self) -> Result<Exp, ParseError> { 
+    fn parse_literal(&mut self) -> Result<Exp, ParseError> {
         let tok = self.peek();
         match tok.tok_type {
             NUMBER { value: _ } => {
                 self.advance();
-                Ok( Exp::Literal { value: tok })
-            },
+                Ok(Exp::Literal { value: tok })
+            }
             STRING { value: _ } => {
                 self.advance();
-                Ok( Exp::Literal { value: tok })
-            },
+                Ok(Exp::Literal { value: tok })
+            }
             NIL | TRUE | FALSE => {
                 self.advance();
-                Ok( Exp::Literal { value: tok })
+                Ok(Exp::Literal { value: tok })
             }
-            _ => Err(ParseError::new(tok.line, format!("unexpected symbol near '{}'", tok.tok_type)))
+            _ => Err(ParseError::new(
+                tok.line,
+                format!("unexpected symbol near '{}'", tok.tok_type),
+            )),
         }
     }
 

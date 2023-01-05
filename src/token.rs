@@ -133,7 +133,7 @@ impl fmt::Display for TokenType {
             NAME { value } => write!(f, "{}", value),
             STRING { value } => write!(f, "\"{}\"", value),
 
-            EOF => write!(f, "EOF"),
+            EOF => write!(f, "<eof>"),
         }
     }
 }

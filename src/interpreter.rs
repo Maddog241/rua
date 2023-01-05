@@ -1,51 +1,73 @@
-use std::collections::HashMap;
-
 use crate::{
-    ast::{Exp, ExpList, FieldList, FuncBody, Name, Stmt, Block, VarList, NameList, Var},
+    ast::{Block, Exp, ExpList, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
+    environment::Environment,
     rua::RuaError,
     token::{Token, TokenType},
     value::Value,
 };
 
 pub struct Interpreter {
-    env_stack: Vec<Env>,
-    stack_top: usize,
+    env_stack: Vec<Environment>,
 }
 
-struct Env {
-    table: HashMap<String, Value>
-}
-
-impl Env {
-    pub fn new() -> Self {
-        Self {
-            table: HashMap::new()
+impl Interpreter {
+    fn push_env(&mut self, env: Environment) -> Result<(), RuntimeError> {
+        self.env_stack.push(env);
+        if self.env_stack.len() >= 1000 {
+            // not the exact line
+            Err(RuntimeError::new(
+                0,
+                format!("exceeds the maximum recursion depths"),
+            ))
+        } else {
+            Ok(())
         }
     }
 
-    pub fn define(&mut self, name: &str, value: Value) {
-        self.table.insert(name.to_string(), value);
+    fn pop_env(&mut self) {
+        self.env_stack.pop().unwrap();
     }
 
-    pub fn get(&self, name: &str) -> Option<&Value> {
-        self.table.get(name)
+    fn define_local(&mut self, name: &Name, value: Value) {
+        self.env_stack.last_mut().unwrap().define(name, value)
     }
-}
 
-pub struct RuntimeError {
-    line: usize,
-    message: String,
-}
-
-impl RuntimeError {
-    pub fn new(line: usize, message: String) -> Self {
-        Self { line, message }
+    fn define_global(&mut self, name: &Name, value: Value) {
+        for index in (0..self.env_stack.len()).rev() {
+            if self.env_stack[index].contain(name) || index == 0{
+                self.env_stack[index].define(name, value);
+                break;
+            }
+        }
     }
-}
 
-impl RuaError for RuntimeError {
-    fn report(&self, filename: &str) {
-        eprintln!("rua: {}:{}: {}", filename, self.line, self.message);
+    fn get(&self, name: &Name) -> Option<&Value> {
+        let n = self.env_stack.len();
+        for index in (0..n).rev() {
+            if let Some(val) = self.env_stack[index].get(name) {
+                return Some(val);
+            }
+        }
+
+        None
+    }
+
+    fn assign_local_namelist(
+        &mut self,
+        namelist: &NameList,
+        explist: &ExpList,
+    ) -> Result<(), RuntimeError> {
+        let mut values = Vec::new();
+        for arg in explist.0.iter() {
+            values.push(self.eval(arg)?);
+        }
+        //      define the parameters
+        for i in 0..namelist.0.len() {
+            let value = values.get(i).unwrap_or(&Value::Nil);
+            self.define_local(&namelist.0[i], value.clone())
+        }
+
+        Ok(())
     }
 }
 
@@ -53,36 +75,44 @@ impl Interpreter {
     // input: an ast node
     pub fn new() -> Self {
         Self {
-            env_stack: vec![Env::new()],
-            stack_top: 0,
+            env_stack: vec![Environment::global_env()],
         }
     }
 
-    pub fn interpret(&mut self, block: Block) -> Result<(), RuntimeError>{
-        for stmt in block.statements {
-            self.exec(stmt)?;
+    pub fn exec_block(&mut self, block: &Block) -> Result<(), RuntimeError> {
+        for stmt in block.statements.iter() {
+            self.exec(stmt)?
         }
+
         Ok(())
     }
 
-    fn exec(&mut self, stmt: Stmt) -> Result<(), RuntimeError> {
+    fn exec(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
-            Stmt::Assign {left, right } => self.exec_assign(left, right),
+            Stmt::Assign { left, right } => self.exec_assign(left, right),
 
             Stmt::LocalAssign { left, right } => self.exec_local_assign(left, right),
 
             Stmt::Break => todo!(),
 
-            Stmt::DoBlockEnd { block } => todo!(),
+            Stmt::DoBlockEnd { block } => {
+                self.push_env(Environment::new())?;
+                self.exec_block(block)?;
+                self.pop_env();
+                Ok(())
+            }
 
             Stmt::FuncDecl {
                 local,
                 name,
                 parlist,
                 body,
-            } => todo!(),
+            } => self.exec_func_decl(local.clone(), name, parlist, body),
 
-            Stmt::FunctionCall { prefixexp, arguments } => {
+            Stmt::FunctionCall {
+                prefixexp,
+                arguments,
+            } => {
                 self.eval_func_call(&prefixexp, &arguments)?;
                 Ok(())
             }
@@ -91,7 +121,7 @@ impl Interpreter {
                 namelist,
                 explist,
                 body,
-            } => todo!(),
+            } => self.exec_generic_for(namelist, explist, body),
 
             Stmt::NumericFor {
                 name,
@@ -99,44 +129,39 @@ impl Interpreter {
                 end,
                 step,
                 body,
-            } => todo!(),
+            } => self.exec_numeric_for(name, start, end, step, body),
 
             Stmt::IfStmt {
                 condition,
                 then_branch,
                 elseif_branches,
                 option_else_branch,
-            } => todo!(),
+            } => self.exec_if(condition, then_branch, elseif_branches, option_else_branch),
 
-            Stmt::WhileStmt { condition, body } => todo!(),
+            Stmt::WhileStmt { condition, body } => self.exec_while(condition, body),
 
             Stmt::RetStmt { explist } => todo!(),
         }
     }
 
-    fn exec_assign(&mut self, left: VarList, right: ExpList) -> Result<(), RuntimeError> {
-        let n = left.vars.len();
+    fn exec_assign(&mut self, left: &VarList, right: &ExpList) -> Result<(), RuntimeError> {
         let mut values = Vec::new();
-        for i in 0..n {
-            if i < right.0.len() {
-                values.push(self.eval(&right.0[i])?);
-            } else {
-                values.push(Value::Nil);
-            }
+        for exp in right.0.iter() {
+            values.push(self.eval(exp)?);
         }
 
-        for (i, value) in values.into_iter().enumerate() {
+        for i in 0..left.vars.len() {
             match &left.vars[i] {
                 Var::Name { name } => {
-                    self.env_stack[self.stack_top].define(&name.0, value)
-                },
+                    self.define_global(name, values.get(i).unwrap_or(&Value::Nil).clone())
+                }
                 Var::TableIndex { prefixexp, exp } => {
                     let table_name = self.eval(&prefixexp)?;
-                    if let Value::Table {  } = table_name {
-
+                    if let Value::Table {} = table_name {
+                        unimplemented!()
                     } else {
                         // here the line number is incorrect
-                        return Err(RuntimeError::new(0, format!("attempt to index a () value")))
+                        return Err(RuntimeError::new(0, format!("attempt to index a () value")));
                     }
                 }
             }
@@ -145,32 +170,155 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_local_assign(&mut self, left: NameList, right: Option<ExpList>) -> Result<(), RuntimeError> {
-        match right {
-            None => {
-                for name in left.0.iter() {
-                    self.env_stack[self.stack_top].define(&name.0, Value::Nil);
-                }
-                Ok(())
+    fn exec_local_assign(&mut self, left: &NameList, right: &ExpList) -> Result<(), RuntimeError> {
+        self.assign_local_namelist(left, right)
+    }
+
+    fn exec_func_decl(
+        &mut self,
+        local: bool,
+        name: &Name,
+        parlist: &NameList,
+        body: &Block,
+    ) -> Result<(), RuntimeError> {
+        let func = Value::Function {
+            name: name.clone(),
+            parameters: parlist.clone(),
+            body: body.clone(),
+        };
+        if local {
+            self.define_local(name, func)
+        } else {
+            self.define_global(name, func)
+        }
+
+        Ok(())
+    }
+
+    fn exec_generic_for(
+        &mut self,
+        namelist: &NameList,
+        explist: &ExpList,
+        body: &Block,
+    ) -> Result<(), RuntimeError> {
+        todo!()
+    }
+
+    /// just desugars the for statement into a while statement 
+    /// by addding a surrounding block and some additional statements
+    /// 
+    /// this is equivalent to 
+    /// ```
+    /// do 
+    ///     local name = start
+    ///     while name < end do 
+    ///         do 
+    ///             body
+    ///         end
+    ///         name = name + step
+    ///     end
+    /// end
+    /// ```
+    fn exec_numeric_for(
+        &mut self,
+        name: &Name,
+        start: &Exp,
+        end: &Exp,
+        step: &Exp,
+        body: &Block,
+    ) -> Result<(), RuntimeError> {
+        
+
+        // defines the loop variable
+        self.push_env(Environment::new())?;
+        let start_val = self.eval(start)?;
+        self.define_local(name, start_val);
+
+        // generate condition expression and update statement
+        let var = Var::Name { name: name.clone() };
+        let condition = Exp::Binary {
+            left: Box::new(Exp::Var { var: var.clone() }),
+            operator: Token::new(0, TokenType::LESS),
+            right: Box::new(end.clone()),
+        };
+        let update = Stmt::Assign {
+            left: VarList{
+                vars: vec![var.clone()]
             },
-            Some(explist) => {
-                let n = left.0.len();
-                let mut values = Vec::new();
-                for i in 0..n {
-                    if i < explist.0.len() {
-                        values.push(self.eval(&explist.0[i])?);
-                    } else {
-                        values.push(Value::Nil);
-                    }
-                }
+            right: ExpList(vec![Exp::Binary {
+                left: Box::new(Exp::Var { var: var.clone() }),
+                operator: Token::new(0, TokenType::PLUS),
+                right: Box::new(step.clone()),
+            }]),
+        };
 
-                for (i, value) in values.into_iter().enumerate() {
-                    self.env_stack[self.stack_top].define(&left.0[i].0, value)
-                }
+        let new_body = Block {
+            statements: vec![
+                Stmt::DoBlockEnd { block: body.clone() },
+                update
+            ]
+        };
 
-                Ok(())
+        // generate the while statement
+        let whilestmt = Stmt::WhileStmt {
+            condition,
+            body: new_body,
+        };
+
+        self.exec(&whilestmt)?;
+
+        self.pop_env();
+
+        Ok(())
+    }
+
+    fn exec_if(
+        &mut self,
+        condition: &Exp,
+        then_branch: &Block,
+        elseif_branches: &Vec<(Exp, Block)>,
+        option_else_branch: &Option<Block>,
+    ) -> Result<(), RuntimeError> {
+        let cond = self.eval(&condition)?;
+        if cond.truthy() {
+            self.push_env(Environment::new())?;
+            self.exec_block(then_branch)?;
+            self.pop_env();
+        } else {
+            let mut flag = false;
+            for (exp, block) in elseif_branches {
+                let cond = self.eval(&exp)?;
+                if cond.truthy() {
+                    self.push_env(Environment::new())?;
+                    self.exec_block(block)?;
+                    self.pop_env();
+                    flag = true;
+                    break;
+                }
+            }
+
+            if !flag {
+                if let Some(else_branch) = option_else_branch {
+                    self.push_env(Environment::new())?;
+                    self.exec_block(else_branch)?;
+                    self.pop_env();
+                }
             }
         }
+
+        Ok(())
+    }
+
+    fn exec_while(&mut self, condition: &Exp, body: &Block) -> Result<(), RuntimeError> {
+        let mut cond = self.eval(&condition)?;
+        while cond.truthy() {
+            self.push_env(Environment::new())?;
+            self.exec_block(&body)?;
+            cond = self.eval(&condition)?;
+            self.pop_env();
+        }
+
+        Ok(())
     }
 
     fn eval(&mut self, exp: &Exp) -> Result<Value, RuntimeError> {
@@ -182,8 +330,11 @@ impl Interpreter {
                 operator,
                 right,
             } => self.eval_binary(operator, left, right),
-            Exp::FunctionCall { prefixexp, arguments } => self.eval_func_call(prefixexp, arguments),
-            Exp::Var { var } => todo!(),
+            Exp::FunctionCall {
+                prefixexp,
+                arguments,
+            } => self.eval_func_call(prefixexp, arguments),
+            Exp::Var { var } => self.eval_var(var),
             Exp::Function { funcbody } => self.eval_func_exp(funcbody),
             Exp::TableConstructor { fieldlist } => self.eval_table(fieldlist),
             Exp::Grouping { exp } => self.eval(exp),
@@ -213,15 +364,17 @@ impl Interpreter {
             TokenType::MINUS => {
                 if let Value::Num { value } = right {
                     Ok(Value::Num { value: -value })
-                } else if let Value::Str { value } = right {
-                    // if value can be converted to numbers, this will be valid
-                    todo!();
                 } else {
-                    Err(RuntimeError::new(
-                        op.line,
-                        format!("attempt to perform arithmetic on a non-number value"),
-                    ))
-                }
+                    // if value can be converted to numbers, this will be valid
+                    if let Some(val) = right.to_number() {
+                        Ok(Value::Num { value: -val })
+                    } else {
+                        Err(RuntimeError::new(
+                            op.line,
+                            format!("attempt to perform negate operation on a '{}'", right.ty())
+                        ))
+                    }
+                } 
             }
             _ => unimplemented!(),
         }
@@ -235,94 +388,57 @@ impl Interpreter {
     fn eval_binary(&mut self, op: &Token, left: &Exp, right: &Exp) -> Result<Value, RuntimeError> {
         let left = self.eval(left)?;
 
-        // this is not implemented with full feature
         match op.tok_type {
             TokenType::PLUS => {
                 //  if the operand is a string and can be converted to num, then it will be valid
                 let right = self.eval(right)?;
-                match (left, right) {
-                    (Value::Num { value: a }, Value::Num { value: b }) => {
-                        Ok(Value::Num { value: a + b })
-                    }
-                    (Value::Str { value: a }, Value::Num { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Num { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Str { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num { value: a+b })
+                    },
                     _ => Err(RuntimeError::new(
                         op.line,
-                        format!("attempt to add () with ()"),
-                    )),
+                        format!("attempt to add {} with {}", left.ty(), right.ty())
+                    ))
                 }
             }
 
             TokenType::MINUS => {
                 let right = self.eval(right)?;
-                match (left, right) {
-                    (Value::Num { value: a }, Value::Num { value: b }) => {
-                        Ok(Value::Num { value: a - b })
-                    }
-                    (Value::Str { value: a }, Value::Num { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Num { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Str { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num { value: a-b })
+                    },
                     _ => Err(RuntimeError::new(
                         op.line,
-                        format!("attempt to subtract () with ()"),
-                    )),
+                        format!("attempt to subtract {} by {}", left.ty(), right.ty())
+                    ))
                 }
             }
 
             TokenType::MUL => {
                 let right = self.eval(right)?;
-                match (left, right) {
-                    (Value::Num { value: a }, Value::Num { value: b }) => {
-                        Ok(Value::Num { value: a * b })
-                    }
-                    (Value::Str { value: a }, Value::Num { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Num { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Str { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num { value: a*b })
+                    },
                     _ => Err(RuntimeError::new(
                         op.line,
-                        format!("attempt to mul () with ()"),
-                    )),
+                        format!("attempt to mul {} with {}", left.ty(), right.ty())
+                    ))
                 }
             }
 
             TokenType::DIV => {
                 let right = self.eval(right)?;
-                match (left, right) {
-                    (Value::Num { value: a }, Value::Num { value: b }) => {
-                        Ok(Value::Num { value: a / b })
-                    }
-                    (Value::Str { value: a }, Value::Num { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Num { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
-                    (Value::Str { value: a }, Value::Str { value: b }) => {
-                        todo!()
-                    }
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num { value: a/b })
+                    },
                     _ => Err(RuntimeError::new(
                         op.line,
-                        format!("attempt to div () with ()"),
-                    )),
+                        format!("attempt to divide {} with {}", left.ty(), right.ty())
+                    ))
                 }
             }
 
@@ -399,13 +515,54 @@ impl Interpreter {
         }
     }
 
-
     fn eval_func_exp(&mut self, funcbody: &FuncBody) -> Result<Value, RuntimeError> {
         todo!()
     }
 
-    fn eval_func_call(&mut self, prefixexp: &Exp, arguments: &Option<ExpList>) -> Result<Value, RuntimeError> {
-        todo!()
+    fn eval_var(&mut self, var: &Var) -> Result<Value, RuntimeError> {
+        match var {
+            Var::Name { name } => {
+                match self.get(name) {
+                    Some(val) => Ok(val.clone()),
+                    None => Ok(Value::Nil)
+                }
+            }
+            Var::TableIndex { prefixexp, exp } => {
+                todo!()
+            }
+        }
+    }
+
+    fn eval_func_call(
+        &mut self,
+        prefixexp: &Exp,
+        arguments: &ExpList,
+    ) -> Result<Value, RuntimeError> {
+        let func_name = self.eval(prefixexp)?;
+        if let Value::Function {
+            name,
+            parameters,
+            body,
+        } = func_name
+        {
+            if self.is_builtin(&name) {
+                self.call_builtin(&name, arguments)?;
+            } else {
+                self.push_env(Environment::new())?;
+                // define the local parameters
+                self.assign_local_namelist(&parameters, arguments)?;
+
+                self.exec_block(&body)?;
+                self.pop_env();
+            }
+            Ok(Value::Nil)
+        } else {
+            // fake line
+            Err(RuntimeError::new(
+                0,
+                format!("attempt to call a {} value", func_name.ty()),
+            ))
+        }
     }
 
     fn eval_table(&mut self, fieldlist: &Option<FieldList>) -> Result<Value, RuntimeError> {
@@ -464,7 +621,61 @@ impl Interpreter {
     /// if both are numbers or strings, compare the normal way (value and alphabetic order)
     ///
     /// comparison a > b is translated to b < a and a >= b translated to b <= a
-    fn greater_equal(&self, left: &Value, right: &Value, line: usize) -> Result<Value, RuntimeError> {
+    fn greater_equal(
+        &self,
+        left: &Value,
+        right: &Value,
+        line: usize,
+    ) -> Result<Value, RuntimeError> {
         self.less(right, left, line)
+    }
+
+    fn is_builtin(&self, func_name: &str) -> bool {
+        match func_name {
+            "print" => true,
+            _ => false,
+        }
+    }
+
+    fn call_builtin(
+        &mut self,
+        func_name: &str,
+        arguments: &ExpList,
+    ) -> Result<Value, RuntimeError> {
+        match func_name {
+            "print" => self.call_print(arguments),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn call_print(&mut self, arguments: &ExpList) -> Result<Value, RuntimeError> {
+        let mut values = Vec::new();
+        for arg in arguments.0.iter() {
+            values.push(self.eval(&arg)?);
+        }
+
+        for value in values {
+            print!("{}\t", value)
+        }
+        print!("\n");
+
+        Ok(Value::Nil)
+    }
+}
+
+pub struct RuntimeError {
+    line: usize,
+    message: String,
+}
+
+impl RuntimeError {
+    pub fn new(line: usize, message: String) -> Self {
+        Self { line, message }
+    }
+}
+
+impl RuaError for RuntimeError {
+    fn report(&self, filename: &str) {
+        eprintln!("rua: {}:{}: {}", filename, self.line, self.message);
     }
 }
