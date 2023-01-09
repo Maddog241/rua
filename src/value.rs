@@ -1,6 +1,6 @@
 use std::{fmt, collections::HashMap};
 
-use crate::{ast::{Block, Name, NameList}, interpreter::RuntimeError};
+use crate::{ast::{Block, NameList}, interpreter::RuntimeError, environment::Address};
 
 #[derive(Clone)]
 pub enum Value {
@@ -20,6 +20,9 @@ pub enum Value {
     },
     Table {
         table: Table,
+    },
+    Address {
+        addr: Address,
     },
 
     // Builtin Functions
@@ -51,6 +54,7 @@ impl Value {
                 body: _,
             } => String::from("function"),
             Self::Table { table: _ } => String::from("table"),
+            Self::Address { addr: _ } => String::from("address"),
             Self::Print => String::from("function"),
         }
     }
@@ -88,10 +92,11 @@ impl fmt::Display for Value {
             Self::Num { value } => write!(f, "{}", value),
             Self::Str { value } => write!(f, "'{}'", value),
             Self::Function {
-                parameters,
+                parameters: _,
                 body: _,
-            } => write!(f, "function ({})", parameters),
-            Self::Table { table } => write!(f, "this is a table"),
+            } => unimplemented!(),
+            Self::Table { table: _ } => unimplemented!(),
+            Self::Address { addr } => write!(f, "{}", addr),
             Self::Print => write!(f, "print"),
         }
     }

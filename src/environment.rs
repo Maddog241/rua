@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::cmp::Eq;
+use std::fmt;
 
 use crate::{
     value::Value,
@@ -34,5 +36,26 @@ impl Environment {
 
     pub fn contain(&self, name: &str) -> bool {
         self.table.contains_key(name)
+    }
+}
+
+#[derive(PartialEq, Hash, Clone)]
+pub struct Address {
+    addr: usize
+}
+
+impl Address {
+    pub fn new(addr: usize) -> Self {
+        Address {
+            addr
+        }
+    }
+}
+
+impl Eq for Address {}
+
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0x{:016x}", self.addr)
     }
 }

@@ -1,6 +1,8 @@
+use std::{collections::HashMap, ops::Add};
+
 use crate::{
     ast::{Block, Exp, ExpList, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
-    environment::Environment,
+    environment::{Environment, Address},
     rua::RuaError,
     token::{Token, TokenType},
     value::{Value, Table},
@@ -8,6 +10,8 @@ use crate::{
 
 pub struct Interpreter {
     env_stack: Vec<Environment>,
+    addr_space: HashMap<Address, Value>,
+    cur_addr: usize,
 }
 
 impl Interpreter {
@@ -52,6 +56,35 @@ impl Interpreter {
         None
     }
 
+    /// value must be a function or a table
+    fn alloc(&mut self, value: Value) -> Address {
+        let old_addr = self.cur_addr;
+        self.cur_addr += 128; // 128 is just for fun
+        self.addr_space.insert(Address::new(old_addr), value);
+
+        Address::new(old_addr)
+    }
+
+    fn dereference(&mut self, addr: &Address) -> Value {
+        match self.addr_space.get(addr) {
+            Some(v) => v.clone(),
+            None => Value::Nil,
+        }
+    }
+
+    fn assign_table(&mut self, addr: &Address, key: Value, val: Value) -> Result<(), RuntimeError>{
+        match self.addr_space.get_mut(addr) {
+            Some(v) => {
+                if let Value::Table { table } = v {
+                    table.insert(key, val)
+                } else {
+                    Err(RuntimeError::new(0, format!("attempt to assign a () value")))
+                }
+            },
+            None => unimplemented!()
+        }
+    }
+
     fn assign_local_namelist(
         &mut self,
         namelist: &NameList,
@@ -76,6 +109,8 @@ impl Interpreter {
     pub fn new() -> Self {
         Self {
             env_stack: vec![Environment::global_env()],
+            addr_space: HashMap::new(),
+            cur_addr: 0,
         }
     }
 
@@ -156,13 +191,11 @@ impl Interpreter {
                     self.define_global(name, values.get(i).unwrap_or(&Value::Nil).clone())
                 }
                 Var::TableIndex { prefixexp, exp } => {
-                    let table_name = self.eval(&prefixexp)?;
-                    if let Value::Table { mut table } = table_name {
+                    if let Value::Address { addr } = self.eval(&prefixexp)? {
                         let key = self.eval(exp)?;
-                        table.insert(key, values[i].clone())?;
+                        self.assign_table(&addr, key, values[i].clone())?;
                     } else {
-                        // here the line number is incorrect
-                        return Err(RuntimeError::new(0, format!("attempt to index a () value")));
+                        return Err(RuntimeError::new(0, format!("attempt to assign a () value")));
                     }
                 }
             }
@@ -186,10 +219,13 @@ impl Interpreter {
             parameters: parlist.clone(),
             body: body.clone(),
         };
+
+        let addr = self.alloc(func);
+
         if local {
-            self.define_local(name, func)
+            self.define_local(name, Value::Address { addr })
         } else {
-            self.define_global(name, func)
+            self.define_global(name, Value::Address { addr })
         }
 
         Ok(())
@@ -516,7 +552,9 @@ impl Interpreter {
     }
 
     fn eval_func_exp(&mut self, funcbody: &FuncBody) -> Result<Value, RuntimeError> {
-        todo!()
+        let func = Value::Function { parameters: funcbody.parlist.clone(), body: funcbody.block.clone() };
+        let addr = self.alloc(func);
+        Ok(Value::Address { addr })
     }
 
     fn eval_var(&mut self, var: &Var) -> Result<Value, RuntimeError> {
@@ -528,10 +566,17 @@ impl Interpreter {
                 }
             }
             Var::TableIndex { prefixexp, exp } => {
-                let table = self.eval(&prefixexp)?;
-                if let Value::Table { table } = table {
+                let table_addr = self.eval(&prefixexp)?;
+                if let Value::Address { addr } = table_addr {
+                    let table = self.dereference(&addr);
+
                     let i = self.eval(&exp)?;
-                    Ok(table.index(i)?)
+
+                    if let Value::Table { table } = table {
+                        Ok(table.index(i)?)
+                    } else {
+                        Err(RuntimeError::new(0, format!("attempt to index a () value")))
+                    }
                 } else {
                     Err(RuntimeError::new(0, format!("attempt to index a () value")))
                 }
@@ -545,19 +590,25 @@ impl Interpreter {
         arguments: &ExpList,
     ) -> Result<Value, RuntimeError> {
         let func_name = self.eval(prefixexp)?;
-        if let Value::Function {
-            parameters,
-            body,
+        if let Value::Address {
+            addr
         } = func_name
         {
-            self.push_env(Environment::new())?;
-            // define the local parameters
-            self.assign_local_namelist(&parameters, arguments)?;
+            if let Value::Function { parameters, body } = self.dereference(&addr) {
+                self.push_env(Environment::new())?;
+                // define the local parameters
+                self.assign_local_namelist(&parameters, arguments)?;
 
-            self.exec_block(&body)?;
-            self.pop_env();
+                self.exec_block(&body)?;
+                self.pop_env();
 
-            Ok(Value::Nil)
+                Ok(Value::Nil)
+            } else {
+                Err(RuntimeError::new(
+                    0,
+                    format!("attempt to call a non-function value"),
+                ))
+            }
         } else if let Value::Print = func_name {
             self.call_print(arguments)
         } else {
@@ -583,7 +634,9 @@ impl Interpreter {
             }
         }
 
-        Ok(Value::Table { table })
+        let addr = self.alloc(Value::Table{table});
+
+        Ok(Value::Address { addr })
     }
 
     /// if the the types are different, the result is false
