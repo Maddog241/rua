@@ -275,7 +275,7 @@ pub enum Exp {
         exp: Box<Exp>,
     },
     TableConstructor {
-        fieldlist: Option<FieldList>,
+        fieldlist: FieldList,
     },
 }
 
@@ -301,11 +301,8 @@ impl fmt::Display for Exp {
                 write!(f, "{}({})", prefixexp, arguments)
             }
             Self::Grouping { exp } => write!(f, "{}", exp),
-            Self::TableConstructor { fieldlist } => match fieldlist {
-                Some(fieldlist) => {
-                    write!(f, "Table{{{}}}", fieldlist)
-                }
-                None => write!(f, "Table{{}}"),
+            Self::TableConstructor { fieldlist } => {
+                write!(f, "Table{{{}}}", fieldlist)
             },
         }
     }
@@ -331,16 +328,13 @@ impl fmt::Display for ExpList {
 // funcbody
 #[derive(Clone)]
 pub struct FuncBody {
-    pub parlist: Option<NameList>,
+    pub parlist: NameList,
     pub block: Block,
 }
 
 impl fmt::Display for FuncBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.parlist {
-            Some(parlist) => write!(f, "function({}){{{}}}", parlist, self.block),
-            None => write!(f, "function(){{{}}}", self.block),
-        }
+        write!(f, "function({}){{{}}}", self.parlist, self.block)
     }
 }
 
@@ -352,9 +346,7 @@ pub struct Field {
 }
 
 #[derive(Clone)]
-pub struct FieldList {
-    pub fields: Vec<Field>,
-}
+pub struct FieldList (pub Vec<Field>);
 
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -372,10 +364,10 @@ impl fmt::Display for Field {
 impl fmt::Display for FieldList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut count = 0;
-        self.fields.iter().fold(Ok(()), |result, name| {
+        self.0.iter().fold(Ok(()), |result, name| {
             result.and_then(|_| {
                 count += 1;
-                if count == self.fields.len() {
+                if count == self.0.len() {
                     write!(f, "{}", name)
                 } else {
                     write!(f, "{}, ", name)

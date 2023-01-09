@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Block, NameList},
     value::Value,
 };
 
@@ -20,11 +19,7 @@ impl Environment {
         Self {
             table: HashMap::from([(
                 String::from("print"),
-                Value::Function {
-                    name: String::from("print"),
-                    parameters: NameList(vec![]),
-                    body: Block { statements: vec![] },
-                },
+                Value::Print,
             )]),
         }
     }

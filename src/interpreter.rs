@@ -3,7 +3,7 @@ use crate::{
     environment::Environment,
     rua::RuaError,
     token::{Token, TokenType},
-    value::Value,
+    value::{Value, Table},
 };
 
 pub struct Interpreter {
@@ -157,8 +157,9 @@ impl Interpreter {
                 }
                 Var::TableIndex { prefixexp, exp } => {
                     let table_name = self.eval(&prefixexp)?;
-                    if let Value::Table {} = table_name {
-                        unimplemented!()
+                    if let Value::Table { mut table } = table_name {
+                        let key = self.eval(exp)?;
+                        table.insert(key, values[i].clone())?;
                     } else {
                         // here the line number is incorrect
                         return Err(RuntimeError::new(0, format!("attempt to index a () value")));
@@ -182,7 +183,6 @@ impl Interpreter {
         body: &Block,
     ) -> Result<(), RuntimeError> {
         let func = Value::Function {
-            name: name.clone(),
             parameters: parlist.clone(),
             body: body.clone(),
         };
@@ -211,7 +211,7 @@ impl Interpreter {
     /// ```
     /// do 
     ///     local name = start
-    ///     while name < end do 
+    ///     while name <= end do 
     ///         do 
     ///             body
     ///         end
@@ -238,7 +238,7 @@ impl Interpreter {
         let var = Var::Name { name: name.clone() };
         let condition = Exp::Binary {
             left: Box::new(Exp::Var { var: var.clone() }),
-            operator: Token::new(0, TokenType::LESS),
+            operator: Token::new(0, TokenType::LESSEQUAL),
             right: Box::new(end.clone()),
         };
         let update = Stmt::Assign {
@@ -528,7 +528,13 @@ impl Interpreter {
                 }
             }
             Var::TableIndex { prefixexp, exp } => {
-                todo!()
+                let table = self.eval(&prefixexp)?;
+                if let Value::Table { table } = table {
+                    let i = self.eval(&exp)?;
+                    Ok(table.index(i)?)
+                } else {
+                    Err(RuntimeError::new(0, format!("attempt to index a () value")))
+                }
             }
         }
     }
@@ -540,22 +546,20 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let func_name = self.eval(prefixexp)?;
         if let Value::Function {
-            name,
             parameters,
             body,
         } = func_name
         {
-            if self.is_builtin(&name) {
-                self.call_builtin(&name, arguments)?;
-            } else {
-                self.push_env(Environment::new())?;
-                // define the local parameters
-                self.assign_local_namelist(&parameters, arguments)?;
+            self.push_env(Environment::new())?;
+            // define the local parameters
+            self.assign_local_namelist(&parameters, arguments)?;
 
-                self.exec_block(&body)?;
-                self.pop_env();
-            }
+            self.exec_block(&body)?;
+            self.pop_env();
+
             Ok(Value::Nil)
+        } else if let Value::Print = func_name {
+            self.call_print(arguments)
         } else {
             // fake line
             Err(RuntimeError::new(
@@ -565,8 +569,21 @@ impl Interpreter {
         }
     }
 
-    fn eval_table(&mut self, fieldlist: &Option<FieldList>) -> Result<Value, RuntimeError> {
-        todo!()
+    fn eval_table(&mut self, fieldlist: &FieldList) -> Result<Value, RuntimeError> {
+        let mut table = Table::new();
+        let mut num_index = 1.0;
+
+        for field in fieldlist.0.iter() {
+            match &field.name {
+                Some(name) => table.insert(Value::Str { value: name.clone() }, self.eval(&field.exp)?)?,
+                None => {
+                    table.insert(Value::Num { value: num_index }, self.eval(&field.exp)?)?;
+                    num_index += 1.0;
+                }
+            }
+        }
+
+        Ok(Value::Table { table })
     }
 
     /// if the the types are different, the result is false
@@ -628,24 +645,6 @@ impl Interpreter {
         line: usize,
     ) -> Result<Value, RuntimeError> {
         self.less(right, left, line)
-    }
-
-    fn is_builtin(&self, func_name: &str) -> bool {
-        match func_name {
-            "print" => true,
-            _ => false,
-        }
-    }
-
-    fn call_builtin(
-        &mut self,
-        func_name: &str,
-        arguments: &ExpList,
-    ) -> Result<Value, RuntimeError> {
-        match func_name {
-            "print" => self.call_print(arguments),
-            _ => unimplemented!(),
-        }
     }
 
     fn call_print(&mut self, arguments: &ExpList) -> Result<Value, RuntimeError> {

@@ -741,9 +741,9 @@ impl Parser {
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
         let fieldlist = if let RIGHTBRACE = self.peek().tok_type {
-            None
+            FieldList(vec![])
         } else {
-            Some(self.parse_fieldlist()?)
+            self.parse_fieldlist()?
         };
         consume!(self.advance(), RIGHTBRACE, RIGHTBRACE)?;
         Ok(Exp::TableConstructor { fieldlist })
@@ -756,7 +756,7 @@ impl Parser {
             fields.push(self.parse_field()?);
         }
 
-        Ok(FieldList { fields })
+        Ok(FieldList(fields))
     }
 
     fn parse_field(&mut self) -> Result<Field, ParseError> {
@@ -786,9 +786,9 @@ impl Parser {
         consume!(self.advance(), FUNCTION, FUNCTION)?;
         consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
         let parlist = if let RIGHTPAREN = self.peek().tok_type {
-            None
+            NameList(vec![])
         } else {
-            Some(self.parse_namelist()?)
+            self.parse_namelist()?
         };
         consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
         let block = self.parse_block()?;
