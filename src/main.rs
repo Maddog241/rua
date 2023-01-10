@@ -7,8 +7,7 @@ mod rua;
 mod token;
 mod value;
 
-use std::io::Write;
-use std::{env, io, process::exit};
+use std::{env, process::exit};
 
 use interpreter::Interpreter;
 use rua::{Rua, RuaError};
@@ -37,15 +36,4 @@ fn main() {
         },
         Err(e) => e.report(&args[1]),
     }
-}
-
-#[allow(dead_code)]
-fn show_source(source: Vec<u8>) -> io::Result<()> {
-    let mut lock = io::stdout().lock();
-
-    for c in source.iter() {
-        write!(lock, "{}", c)?;
-    }
-
-    Ok(())
 }

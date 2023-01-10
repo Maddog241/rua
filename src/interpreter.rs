@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Add};
+use std::collections::HashMap;
 
 use crate::{
     ast::{Block, Exp, ExpList, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
@@ -20,7 +20,7 @@ impl Interpreter {
         if self.env_stack.len() >= 1000 {
             // not the exact line
             Err(RuntimeError::new(
-                0,
+                0x0000ffff0000,
                 format!("exceeds the maximum recursion depths"),
             ))
         } else {
@@ -218,6 +218,7 @@ impl Interpreter {
         let func = Value::Function {
             parameters: parlist.clone(),
             body: body.clone(),
+            closure: self.env_stack.clone(),
         };
 
         let addr = self.alloc(func);
@@ -552,7 +553,7 @@ impl Interpreter {
     }
 
     fn eval_func_exp(&mut self, funcbody: &FuncBody) -> Result<Value, RuntimeError> {
-        let func = Value::Function { parameters: funcbody.parlist.clone(), body: funcbody.block.clone() };
+        let func = Value::Function { parameters: funcbody.parlist.clone(), body: funcbody.block.clone(), closure: self.env_stack.clone() };
         let addr = self.alloc(func);
         Ok(Value::Address { addr })
     }
@@ -594,13 +595,20 @@ impl Interpreter {
             addr
         } = func_name
         {
-            if let Value::Function { parameters, body } = self.dereference(&addr) {
+            if let Value::Function { parameters, body , mut closure} = self.dereference(&addr) {
+                let rec_n = self.env_stack.len();
+                self.env_stack.append(&mut closure);
+    
                 self.push_env(Environment::new())?;
                 // define the local parameters
                 self.assign_local_namelist(&parameters, arguments)?;
 
                 self.exec_block(&body)?;
                 self.pop_env();
+
+                while self.env_stack.len() > rec_n {
+                    self.pop_env();
+                }
 
                 Ok(Value::Nil)
             } else {
@@ -649,7 +657,8 @@ impl Interpreter {
         match (left, right) {
             (Value::Num { value: a }, Value::Num { value: b }) => a == b,
             (Value::Str { value: a }, Value::Str { value: b }) => a == b,
-            _ => todo!(), // compare functions and tables
+            (Value::Address { addr: a }, Value::Address { addr: b }) => a == b,
+            _ => false, 
         }
     }
 

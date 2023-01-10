@@ -1,7 +1,20 @@
-a = {1, 2, 3, name="zhou yi", age=10}
-a[4] = 100
-b = {1}
-c = {2}
-print(a)
-print(b)
-print(c)
+--- 
+do 
+    local a = 'hello'
+    function fun()
+        print(a)
+    end
+    fun()
+end
+fun()
+---
+a = "hello"
+do 
+    function fun() 
+        print(a)
+    end
+
+    fun()
+    a = "world"
+    fun()
+end

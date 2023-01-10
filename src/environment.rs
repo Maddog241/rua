@@ -6,6 +6,7 @@ use crate::{
     value::Value,
 };
 
+#[derive(Clone)]
 pub struct Environment {
     table: HashMap<String, Value>,
 }
@@ -56,6 +57,6 @@ impl Eq for Address {}
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "0x{:016x}", self.addr)
+        write!(f, "0x{:012x}", self.addr)
     }
 }
