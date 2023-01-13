@@ -212,7 +212,11 @@ impl Parser {
         let body = self.parse_block()?;
         consume!(self.advance(), END, END)?;
 
-        Ok(Stmt::WhileStmt { condition, body, line: self.line })
+        Ok(Stmt::WhileStmt {
+            condition,
+            body,
+            line: self.line,
+        })
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
@@ -313,15 +317,20 @@ impl Parser {
                                     namelist,
                                     table,
                                     body,
-                                    line: self.line
+                                    line: self.line,
                                 })
                             } else {
-                                return Err(ParseError::new(self.peek().line, format!("'pairs' expected after 'in'")))
+                                return Err(ParseError::new(
+                                    self.peek().line,
+                                    format!("'pairs' expected after 'in'"),
+                                ));
                             }
                         } else {
-                            return Err(ParseError::new(self.peek().line, format!("'pairs' expected after 'in'")))
+                            return Err(ParseError::new(
+                                self.peek().line,
+                                format!("'pairs' expected after 'in'"),
+                            ));
                         }
-
                     }
                 }
             }
@@ -340,13 +349,13 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::RetStmt {
                     explist: ExpList(vec![]),
-                    line: self.line
+                    line: self.line,
                 })
             }
 
             END | ELSE | ELSEIF => Ok(Stmt::RetStmt {
                 explist: ExpList(vec![]),
-                line: self.line
+                line: self.line,
             }),
 
             _ => {
@@ -354,7 +363,10 @@ impl Parser {
                 if let SEMICOLON = self.peek().tok_type {
                     self.advance();
                 }
-                Ok(Stmt::RetStmt { explist, line: self.line })
+                Ok(Stmt::RetStmt {
+                    explist,
+                    line: self.line,
+                })
             }
         }
     }
@@ -378,7 +390,7 @@ impl Parser {
                     name: value,
                     parlist,
                     body,
-                    line: self.line
+                    line: self.line,
                 })
             }
 
@@ -937,7 +949,7 @@ impl Parser {
         }
 
         match self.peek().tok_type {
-            MINUS | NOT => true,
+            MINUS | NOT | POUND => true,
             _ => false,
         }
     }

@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use std::cmp::Eq;
+use std::collections::HashMap;
 use std::fmt;
 
-use crate::{
-    value::Value,
-};
+use crate::value::Value;
 
 #[derive(Clone)]
 pub struct Environment {
@@ -20,10 +18,7 @@ impl Environment {
 
     pub fn global_env() -> Self {
         Self {
-            table: HashMap::from([(
-                String::from("print"),
-                Value::Print,
-            )]),
+            table: HashMap::from([(String::from("print"), Value::Print)]),
         }
     }
 
@@ -42,14 +37,12 @@ impl Environment {
 
 #[derive(PartialEq, Hash, Clone)]
 pub struct Address {
-    addr: usize
+    addr: usize,
 }
 
 impl Address {
     pub fn new(addr: usize) -> Self {
-        Address {
-            addr
-        }
+        Address { addr }
     }
 }
 

@@ -61,6 +61,7 @@ pub enum TokenType {
     POW,
     FLOORDIV,
     DOTDOT,
+    POUND,
 
     EQUAL,
     EQUALEQUAL,
@@ -120,6 +121,7 @@ impl fmt::Display for TokenType {
             POW => write!(f, "^"),
             FLOORDIV => write!(f, "//"),
             DOTDOT => write!(f, ".."),
+            POUND => write!(f, "#"),
 
             EQUAL => write!(f, "="),
             EQUALEQUAL => write!(f, "=="),

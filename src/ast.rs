@@ -33,31 +33,31 @@ pub enum Stmt {
     Assign {
         left: VarList,
         right: ExpList,
-        line: usize, 
+        line: usize,
     },
     LocalAssign {
         left: NameList,
         right: ExpList,
-        line: usize, 
+        line: usize,
     },
-    Break{
-        line: usize, 
+    Break {
+        line: usize,
     },
     DoBlockEnd {
         block: Block,
-        line: usize, 
+        line: usize,
     },
     WhileStmt {
         condition: Exp,
         body: Block,
-        line: usize, 
+        line: usize,
     },
     IfStmt {
         condition: Exp,
         then_branch: Block,
         elseif_branches: Vec<(Exp, Block)>,
         option_else_branch: Option<Block>,
-        line: usize, 
+        line: usize,
     },
     NumericFor {
         name: Name,
@@ -65,40 +65,48 @@ pub enum Stmt {
         end: Exp,
         step: Exp,
         body: Block,
-        line: usize, 
+        line: usize,
     },
     GenericFor {
         namelist: NameList,
         table: Exp,
         body: Block,
-        line: usize, 
+        line: usize,
     },
     FuncDecl {
         local: bool,
         name: Name,
         parlist: NameList,
         body: Block,
-        line: usize, 
+        line: usize,
     },
     FunctionCall {
         prefixexp: Box<Exp>,
         arguments: ExpList,
-        line: usize, 
+        line: usize,
     },
     RetStmt {
         explist: ExpList,
-        line: usize, 
+        line: usize,
     },
 }
 
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Assign { left, right , line: _} => {
+            Self::Assign {
+                left,
+                right,
+                line: _,
+            } => {
                 write!(f, "{} = {}\n", left, right)
             }
 
-            Self::LocalAssign { left, right, line: _ } => {
+            Self::LocalAssign {
+                left,
+                right,
+                line: _,
+            } => {
                 if right.0.is_empty() {
                     write!(f, "local {}\n", left)
                 } else {
@@ -118,7 +126,7 @@ impl fmt::Display for Stmt {
                 write!(f, "break\n")
             }
 
-            Self::DoBlockEnd { block , line: _} => {
+            Self::DoBlockEnd { block, line: _ } => {
                 write!(f, "{}", block)
             }
 
@@ -162,7 +170,11 @@ impl fmt::Display for Stmt {
                 }
             }
 
-            Self::WhileStmt { condition, body , line: _} => {
+            Self::WhileStmt {
+                condition,
+                body,
+                line: _,
+            } => {
                 write!(f, "while({}) {{\n{}}}\n", condition, body)
             }
 
@@ -194,7 +206,7 @@ impl fmt::Display for Stmt {
                 )
             }
 
-            Self::RetStmt { explist, line: _} => {
+            Self::RetStmt { explist, line: _ } => {
                 write!(f, "return {}\n", explist)
             }
         }
@@ -320,7 +332,7 @@ impl fmt::Display for Exp {
             Self::Grouping { exp } => write!(f, "{}", exp),
             Self::TableConstructor { fieldlist } => {
                 write!(f, "Table{{{}}}", fieldlist)
-            },
+            }
         }
     }
 }
@@ -363,7 +375,7 @@ pub struct Field {
 }
 
 #[derive(Clone)]
-pub struct FieldList (pub Vec<Field>);
+pub struct FieldList(pub Vec<Field>);
 
 impl fmt::Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

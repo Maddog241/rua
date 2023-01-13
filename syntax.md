@@ -32,7 +32,7 @@ field ::= Name '=' exp | exp | '[' exp ']'
 fieldsep ::= ',' | ';'
 binop ::= '+' | '-' | '*' | '/' | '//' | '^' | '%' | '..' | 
     '<' | '>' | '>=' | '<=' | '==' | '~=' | and | or
-unop ::= '-' | not 
+unop ::= '-' | not  | #
 ```
 
 Eliminate left recursions and get the following production rules
@@ -61,7 +61,7 @@ comparison -> concat ( ('>' | '<' | '<=' | '>=' | '==' | '~=') concat )*
 concat  -> term ('..' term)*
 term    -> factor ( ('-' | '+') factor)*
 factor  -> unary ( ('/' | '*') unary )*
-unary   -> (not | '-') unary | primary
+unary   -> (not | '-' | #) unary | primary
 primary -> functiondef | 
            tableconstructor | 
            prefixexp |

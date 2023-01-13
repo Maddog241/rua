@@ -137,6 +137,10 @@ impl<'a> Lexer<'a> {
                         self.advance(1);
                     }
                 }
+                b'#' => {
+                    tokens.push(Token::new(self.line, TokenType::POUND));
+                    self.advance(1);
+                }
                 b';' => {
                     tokens.push(Token::new(self.line, TokenType::SEMICOLON));
                     self.advance(1);
