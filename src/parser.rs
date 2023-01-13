@@ -290,16 +290,30 @@ impl Parser {
                         // get back one step!!!!!!
                         let namelist = self.parse_namelist()?;
                         consume!(self.advance(), IN, IN)?;
-                        let explist = self.parse_explist()?;
-                        consume!(self.advance(), DO, DO)?;
-                        let body = self.parse_block()?;
-                        consume!(self.advance(), END, END)?;
 
-                        Ok(Stmt::GenericFor {
-                            namelist,
-                            explist,
-                            body,
-                        })
+                        if let NAME { value } = self.peek().tok_type {
+                            if value == "pairs" {
+                                self.advance();
+                                consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
+                                let table = self.parse_expression()?;
+                                consume!(self.advance(), RIGHTPAREN, RIGHTPAREN)?;
+
+                                consume!(self.advance(), DO, DO)?;
+                                let body = self.parse_block()?;
+                                consume!(self.advance(), END, END)?;
+
+                                Ok(Stmt::GenericFor {
+                                    namelist,
+                                    table,
+                                    body,
+                                })
+                            } else {
+                                return Err(ParseError::new(self.peek().line, format!("'pairs' expected after 'in'")))
+                            }
+                        } else {
+                            return Err(ParseError::new(self.peek().line, format!("'pairs' expected after 'in'")))
+                        }
+
                     }
                 }
             }

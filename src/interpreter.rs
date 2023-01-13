@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 
+use ordered_float::OrderedFloat;
+
 use crate::{
     ast::{Block, Exp, ExpList, FieldList, FuncBody, Name, NameList, Stmt, Var, VarList},
     environment::{Environment, Address},
     rua::RuaError,
     token::{Token, TokenType},
-    value::{Value, Table},
+    value::{Value, Table, HeapObj},
 };
 
 pub struct Interpreter {
     env_stack: Vec<Environment>,
-    addr_space: HashMap<Address, Value>,
+    addr_space: HashMap<Address, HeapObj>,
     cur_addr: usize,
 }
 
@@ -20,7 +22,7 @@ impl Interpreter {
         if self.env_stack.len() >= 1000 {
             // not the exact line
             Err(RuntimeException::new_error(
-                0x0000ffff0000,
+                0,
                 format!("exceeds the maximum recursion depths"),
             ))
         } else {
@@ -57,26 +59,27 @@ impl Interpreter {
     }
 
     /// value must be a function or a table
-    fn alloc(&mut self, value: Value) -> Address {
+    fn alloc(&mut self, obj: HeapObj) -> Address {
         let old_addr = self.cur_addr;
         self.cur_addr += 128; // 128 is just for fun
-        self.addr_space.insert(Address::new(old_addr), value);
+        self.addr_space.insert(Address::new(old_addr), obj);
 
         Address::new(old_addr)
     }
 
-    fn dereference(&mut self, addr: &Address) -> Value {
+    fn dereference(&mut self, addr: &Address) -> Option<HeapObj> {
         match self.addr_space.get(addr) {
-            Some(v) => v.clone(),
-            None => Value::Nil,
+            Some(v) => Some(v.clone()),
+            None => None,
         }
     }
 
     fn assign_table(&mut self, addr: &Address, key: Value, val: Value) -> Result<(), RuntimeException>{
         match self.addr_space.get_mut(addr) {
             Some(v) => {
-                if let Value::Table { table } = v {
-                    table.insert(key, val)
+                if let HeapObj::Table { table } = v {
+                    table.insert(key, val);
+                    Ok(())
                 } else {
                     Err(RuntimeException::new_error(0, format!("attempt to assign a () value")))
                 }
@@ -114,7 +117,7 @@ impl Interpreter {
         Self {
             env_stack: vec![Environment::global_env()],
             addr_space: HashMap::new(),
-            cur_addr: 0,
+            cur_addr: 0x0000ffff0000,
         }
     }
 
@@ -158,9 +161,9 @@ impl Interpreter {
 
             Stmt::GenericFor {
                 namelist,
-                explist,
+                table,
                 body,
-            } => self.exec_generic_for(namelist, explist, body),
+            } => self.exec_generic_for(namelist, table, body),
 
             Stmt::NumericFor {
                 name,
@@ -223,7 +226,7 @@ impl Interpreter {
         parlist: &NameList,
         body: &Block,
     ) -> Result<(), RuntimeException> {
-        let func = Value::Function {
+        let func = HeapObj::Function {
             parameters: parlist.clone(),
             body: body.clone(),
             closure: self.env_stack.clone(),
@@ -243,10 +246,21 @@ impl Interpreter {
     fn exec_generic_for(
         &mut self,
         namelist: &NameList,
-        explist: &ExpList,
+        table: &Exp,
         body: &Block,
     ) -> Result<(), RuntimeException> {
+        // match self.eval(table)? {
+        //     Value::Address { addr } => {
+        //         for (k,v) in table.iter() {
+        //             todo!()
+        //         }
+
+        //         Ok(())
+        //     },
+        //     _ => Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
+        // }
         todo!()
+
     }
 
     /// just desugars the for statement into a while statement 
@@ -410,7 +424,7 @@ impl Interpreter {
             TokenType::STRING { value } => Ok(Value::Str {
                 value: value.clone(),
             }),
-            TokenType::NUMBER { value } => Ok(Value::Num { value: *value }),
+            TokenType::NUMBER { value } => Ok(Value::Num { value: OrderedFloat::from(*value) }),
             _ => unimplemented!(),
         }
     }
@@ -577,7 +591,7 @@ impl Interpreter {
     }
 
     fn eval_func_exp(&mut self, funcbody: &FuncBody) -> Result<Value, RuntimeException> {
-        let func = Value::Function { parameters: funcbody.parlist.clone(), body: funcbody.block.clone(), closure: self.env_stack.clone() };
+        let func = HeapObj::Function { parameters: funcbody.parlist.clone(), body: funcbody.block.clone(), closure: self.env_stack.clone() };
         let addr = self.alloc(func);
         Ok(Value::Address { addr })
     }
@@ -597,8 +611,8 @@ impl Interpreter {
 
                     let i = self.eval(&exp)?;
 
-                    if let Value::Table { table } = table {
-                        Ok(table.index(i)?)
+                    if let Some(HeapObj::Table { table }) = table {
+                        Ok(table.index(&i))
                     } else {
                         Err(RuntimeException::new_error(0, format!("attempt to index a () value")))
                     }
@@ -619,7 +633,7 @@ impl Interpreter {
             addr
         } = func_name
         {
-            if let Value::Function { parameters, body , mut closure} = self.dereference(&addr) {
+            if let Some(HeapObj::Function { parameters, body , mut closure}) = self.dereference(&addr) {
                 let rec_n = self.env_stack.len();
                 self.env_stack.append(&mut closure);
     
@@ -666,15 +680,15 @@ impl Interpreter {
 
         for field in fieldlist.0.iter() {
             match &field.name {
-                Some(name) => table.insert(Value::Str { value: name.clone() }, self.eval(&field.exp)?)?,
+                Some(name) => table.insert(Value::Str { value: name.clone() }, self.eval(&field.exp)?),
                 None => {
-                    table.insert(Value::Num { value: num_index }, self.eval(&field.exp)?)?;
+                    table.insert(Value::Num { value: OrderedFloat::from(num_index) }, self.eval(&field.exp)?);
                     num_index += 1.0;
                 }
             }
         }
 
-        let addr = self.alloc(Value::Table{table});
+        let addr = self.alloc(HeapObj::Table{table});
 
         Ok(Value::Address { addr })
     }

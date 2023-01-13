@@ -1,8 +1,10 @@
 use std::{fmt, collections::HashMap};
 
-use crate::{ast::{Block, NameList}, interpreter::RuntimeException, environment::{Address, Environment}};
+use ordered_float::OrderedFloat;
 
-#[derive(Clone)]
+use crate::{ast::{Block, NameList}, environment::{Address, Environment}};
+
+#[derive(Clone, PartialEq, Hash)]
 pub enum Value {
     Bool {
         b: bool,
@@ -11,17 +13,10 @@ pub enum Value {
         value: String,
     },
     Num {
-        value: f64,
+        value: OrderedFloat<f64>,
     },
     Nil,
-    Function {
-        parameters: NameList,
-        body: Block,
-        closure: Vec<Environment>,
-    },
-    Table {
-        table: Table,
-    },
+
     Address {
         addr: Address,
     },
@@ -35,6 +30,7 @@ pub enum Value {
     Print,
 }
 
+impl Eq for Value {}
 
 impl Value {
     pub fn truthy(&self) -> bool {
@@ -55,12 +51,6 @@ impl Value {
 
             // err: attempt to perform on a xxx value
             Self::Nil => String::from("nil"),
-            Self::Function {
-                parameters: _,
-                body: _,
-                closure: _,
-            } => String::from("function"),
-            Self::Table { table: _ } => String::from("table"),
             Self::Address { addr: _ } => String::from("address"),
             Self::ValueList { values : _} => String::from("valuelist"),
             Self::Print => String::from("function"),
@@ -70,7 +60,7 @@ impl Value {
     /// try to convert itself to a number value 
     /// 
     /// return `None` upon fail
-    pub fn to_number(&self) -> Option<f64> {
+    pub fn to_number(&self) -> Option<OrderedFloat<f64>> {
         match self {
             Self::Num { value } => Some(value.clone()),
             Self::Str { value } => {
@@ -81,7 +71,7 @@ impl Value {
                     return None
                 }
 
-                if let Ok(num) = value.parse::<f64>() {
+                if let Ok(num) = value.parse::<OrderedFloat<f64>>() {
                     Some(num)
                 } else {
                     None
@@ -119,12 +109,6 @@ impl fmt::Display for Value {
             Self::Nil => write!(f, "nil"),
             Self::Num { value } => write!(f, "{}", value),
             Self::Str { value } => write!(f, "'{}'", value),
-            Self::Function {
-                parameters: _,
-                body: _,
-                closure: _,
-            } => unimplemented!(),
-            Self::Table { table: _ } => unimplemented!(),
             Self::Address { addr } => write!(f, "{}", addr),
             Self::ValueList { values } => {
                 let n = values.len();
@@ -145,7 +129,7 @@ impl fmt::Display for Value {
 
 #[derive(Clone)]
 pub struct Table {
-    map: HashMap<String, Value>,
+    map: HashMap<Value, Value>,
 }
 
 impl Table {
@@ -155,35 +139,31 @@ impl Table {
         }
     }
 
-    pub fn index(&self, i: Value) -> Result<Value, RuntimeException> {
-        match i {
-            Value::Num { value } => {
-                match self.map.get(&value.to_string()){
-                    Some(v) => Ok(v.clone()),
-                    None => Ok(Value::Nil)
-                }
-            },
-            Value::Str { value } => {
-                match self.map.get(&value) {
-                    Some(v) => Ok(v.clone()),
-                    None => Ok(Value::Nil),
-                }
-            }
-            _ => todo!()
+    pub fn index(&self, i: &Value) -> Value {
+        match self.map.get(i) {
+            Some(v) => v.clone(),
+            None => Value::Nil
         }
     }
 
-    pub fn insert(&mut self, key: Value, val: Value) -> Result<(), RuntimeException>{
-        match key {
-            Value::Num { value: num } => {
-                self.map.insert(num.to_string(), val);
-                Ok(())
-            },
-            Value::Str { value: s } => {
-                self.map.insert(s, val);
-                Ok(())
-            },
-            _ => todo!(),
-        }
+    pub fn insert(&mut self, key: Value, val: Value) {
+        self.map.insert(key, val);
+    }
+
+    pub fn iter(&self) -> std::collections::hash_map::Iter<Value, Value> {
+        self.map.iter()
+    }
+}
+
+
+#[derive(Clone)]
+pub enum HeapObj {
+    Function {
+        parameters: NameList, 
+        body: Block,
+        closure: Vec<Environment>,
+    },
+    Table {
+        table: Table,
     }
 }

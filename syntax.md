@@ -10,7 +10,7 @@ stmt ::= ';' |
         while exp do block end | 
         if exp then block {elseif exp then block} [else block] end | 
         for Name '=' exp ',' exp [',' exp] do block end | 
-        for namelist in explist do block end | 
+        for namelist in pairs(table) do block end | 
         local function Name funcbody | 
         function Name funcbody | 
         local namelist ['=' explist]
@@ -49,7 +49,7 @@ stmt -> ';' |
         while exp do block end |
         if exp then block (else if exp then block)* (else block)? end |
         for Name '=' exp ',' exp (',' exp)? do block end |
-        for namelist in explist do block end | 
+        for namelist in pairs(table) do block end | 
         function Name funcbody |
         local function Name funcbody | 
         local namelist ('=' explist)?

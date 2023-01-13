@@ -61,7 +61,7 @@ pub enum Stmt {
     },
     GenericFor {
         namelist: NameList,
-        explist: ExpList,
+        table: Exp,
         body: Block,
     },
     FuncDecl {
@@ -167,13 +167,13 @@ impl fmt::Display for Stmt {
 
             Self::GenericFor {
                 namelist,
-                explist,
+                table,
                 body,
             } => {
                 write!(
                     f,
-                    "GenericFor({} = {}) do {{\n{}}}\n",
-                    namelist, explist, body
+                    "GenericFor({} = pairs({}) do {{\n{}}}\n",
+                    namelist, table, body
                 )
             }
 
