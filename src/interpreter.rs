@@ -91,8 +91,12 @@ impl Interpreter {
         explist: &ExpList,
     ) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
-        for arg in explist.0.iter() {
-            values.push(self.eval(arg)?);
+        for (i, arg) in explist.0.iter().enumerate() {
+            if i+1 < explist.0.len() {
+                values.push(self.eval(arg)?.compress());
+            } else {
+                values.append(&mut self.eval(arg)?.expand())
+            }
         }
         //      define the parameters
         for i in 0..namelist.0.len() {
@@ -181,8 +185,12 @@ impl Interpreter {
 
     fn exec_assign(&mut self, left: &VarList, right: &ExpList) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
-        for exp in right.0.iter() {
-            values.push(self.eval(exp)?);
+        for (i, arg) in right.0.iter().enumerate() {
+            if i+1 < right.0.len() {
+                values.push(self.eval(arg)?.compress());
+            } else {
+                values.append(&mut self.eval(arg)?.expand())
+            }
         }
 
         for i in 0..left.vars.len() {

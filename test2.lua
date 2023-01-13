@@ -1,6 +1,6 @@
-for a=1, 10 do 
-    if a > 3 then 
-        break
-    end
-    print(a)
+function foo()
+    return 1, 2, 3
 end
+
+a, b, c, d = 0, foo(), 2
+print(a, b, c, d)

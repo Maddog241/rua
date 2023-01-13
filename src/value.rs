@@ -90,6 +90,26 @@ impl Value {
             _ => None
         }
     }
+
+    pub fn compress(self) -> Value {
+        match self {
+            Value::ValueList { values } => {
+                if values.is_empty() {
+                    Value::Nil
+                } else {
+                    values[0].clone().compress()
+                }
+            }
+            _ => self
+        }
+    }
+
+    pub fn expand(self) -> Vec<Value> {
+        match self {
+            Value::ValueList { values } => values,
+            _ => vec![self],
+        }
+    }
 }
 
 impl fmt::Display for Value {
