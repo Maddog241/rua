@@ -1,10 +1,6 @@
-a = "global"
-do 
-    function showA()
-        print(a)
+for a=1, 10 do 
+    if a > 3 then 
+        break
     end
-    
-    showA()
-    a = "local"
-    showA()
+    print(a)
 end

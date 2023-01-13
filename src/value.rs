@@ -1,6 +1,6 @@
 use std::{fmt, collections::HashMap};
 
-use crate::{ast::{Block, NameList}, interpreter::RuntimeError, environment::{Address, Environment}};
+use crate::{ast::{Block, NameList}, interpreter::RuntimeException, environment::{Address, Environment}};
 
 #[derive(Clone)]
 pub enum Value {
@@ -24,6 +24,11 @@ pub enum Value {
     },
     Address {
         addr: Address,
+    },
+
+    // value list
+    ValueList {
+        values: Vec<Value>,
     },
 
     // Builtin Functions
@@ -57,6 +62,7 @@ impl Value {
             } => String::from("function"),
             Self::Table { table: _ } => String::from("table"),
             Self::Address { addr: _ } => String::from("address"),
+            Self::ValueList { values : _} => String::from("valuelist"),
             Self::Print => String::from("function"),
         }
     }
@@ -100,6 +106,17 @@ impl fmt::Display for Value {
             } => unimplemented!(),
             Self::Table { table: _ } => unimplemented!(),
             Self::Address { addr } => write!(f, "{}", addr),
+            Self::ValueList { values } => {
+                let n = values.len();
+                if n == 0 {
+                    Ok(())
+                } else {
+                    for i in 0..(n-1) {
+                        write!(f, "{}, ", values[i])?;
+                    }
+                    write!(f, "{}", values[n-1])
+                }
+            }
             Self::Print => write!(f, "print"),
         }
     }
@@ -118,7 +135,7 @@ impl Table {
         }
     }
 
-    pub fn index(&self, i: Value) -> Result<Value, RuntimeError> {
+    pub fn index(&self, i: Value) -> Result<Value, RuntimeException> {
         match i {
             Value::Num { value } => {
                 match self.map.get(&value.to_string()){
@@ -136,7 +153,7 @@ impl Table {
         }
     }
 
-    pub fn insert(&mut self, key: Value, val: Value) -> Result<(), RuntimeError>{
+    pub fn insert(&mut self, key: Value, val: Value) -> Result<(), RuntimeException>{
         match key {
             Value::Num { value: num } => {
                 self.map.insert(num.to_string(), val);
