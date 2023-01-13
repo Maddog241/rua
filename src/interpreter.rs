@@ -249,18 +249,38 @@ impl Interpreter {
         table: &Exp,
         body: &Block,
     ) -> Result<(), RuntimeException> {
-        // match self.eval(table)? {
-        //     Value::Address { addr } => {
-        //         for (k,v) in table.iter() {
-        //             todo!()
-        //         }
+        match self.eval(table)? {
+            Value::Address { addr } => {
+                let table = self.dereference(&addr).unwrap();
+                if let HeapObj::Table { table } = table {
+                    for (k, v) in table {
+                        self.push_env(Environment::new())?;
 
-        //         Ok(())
-        //     },
-        //     _ => Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
-        // }
-        todo!()
+                        let values = vec![k, v];
+                        for (i, name) in namelist.0.iter().enumerate() {
+                            self.define_local(&name, values.get(i).unwrap_or(&Value::Nil).clone());
+                        }
+                        
+                        // handle break
+                        match self.exec_block(&body) {
+                            Ok(_) => {},
+                            Err(RuntimeException::Break) => {
+                                self.pop_env();
+                                break;
+                            },
+                            e => e?,
+                        }
 
+                        self.pop_env();
+                    }
+
+                    Ok(())
+                } else {
+                    Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
+                }
+            },
+            _ => Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
+        }
     }
 
     /// just desugars the for statement into a while statement 
@@ -518,11 +538,29 @@ impl Interpreter {
             }
 
             TokenType::FLOORDIV => {
-                todo!()
+                let right = self.eval(right)?;
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num{ value: OrderedFloat::from((a/b).floor()) })
+                    },
+                    _ => Err(RuntimeException::new_error(
+                        op.line,
+                        format!("attempt to divide {} with {}", left.ty(), right.ty())
+                    ))
+                }
             }
 
             TokenType::MOD => {
-                todo!()
+                let right = self.eval(right)?;
+                match (left.to_number(), right.to_number()) {
+                    (Some(a), Some(b)) => {
+                        Ok(Value::Num{ value: OrderedFloat::from(a%b) })
+                    },
+                    _ => Err(RuntimeException::new_error(
+                        op.line,
+                        format!("attempt to divide {} with {}", left.ty(), right.ty())
+                    ))
+                }
             }
 
             TokenType::DOTDOT => {

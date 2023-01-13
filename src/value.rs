@@ -149,9 +149,14 @@ impl Table {
     pub fn insert(&mut self, key: Value, val: Value) {
         self.map.insert(key, val);
     }
+}
 
-    pub fn iter(&self) -> std::collections::hash_map::Iter<Value, Value> {
-        self.map.iter()
+impl IntoIterator for Table {
+    type Item = (Value, Value);
+    type IntoIter = std::collections::hash_map::IntoIter<Value, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.map.into_iter() 
     }
 }
 
