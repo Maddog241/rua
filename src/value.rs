@@ -172,3 +172,12 @@ pub enum HeapObj {
         table: Table,
     }
 }
+
+impl HeapObj {
+    pub fn ty(&self) -> String {
+        match self {
+            Self::Function { parameters:_, body:_, closure:_ } => String::from("function"),
+            Self::Table { table:_ } => String::from("table"),
+        }
+    }
+}

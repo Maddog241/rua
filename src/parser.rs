@@ -99,6 +99,7 @@ impl Parser {
                             statements.push(Stmt::Assign {
                                 left: VarList { vars },
                                 right: explist,
+                                line: self.line,
                             })
                         }
                         // functioncall
@@ -108,6 +109,7 @@ impl Parser {
                         } => statements.push(Stmt::FunctionCall {
                             prefixexp,
                             arguments,
+                            line: self.line,
                         }),
                         // grouping, error
                         _ => {
@@ -122,7 +124,7 @@ impl Parser {
                 // break
                 BREAK => {
                     self.advance();
-                    statements.push(Stmt::Break);
+                    statements.push(Stmt::Break { line: self.line });
                 }
 
                 // do block end
@@ -130,6 +132,7 @@ impl Parser {
                     self.advance();
                     let res = Stmt::DoBlockEnd {
                         block: self.parse_block()?,
+                        line: self.line,
                     };
                     consume!(self.advance(), END, END)?;
                     statements.push(res);
@@ -191,11 +194,13 @@ impl Parser {
             Ok(Stmt::LocalAssign {
                 left: namelist,
                 right: explist,
+                line: self.line,
             })
         } else {
             Ok(Stmt::LocalAssign {
                 left: namelist,
                 right: ExpList(vec![]),
+                line: self.line,
             })
         }
     }
@@ -207,7 +212,7 @@ impl Parser {
         let body = self.parse_block()?;
         consume!(self.advance(), END, END)?;
 
-        Ok(Stmt::WhileStmt { condition, body })
+        Ok(Stmt::WhileStmt { condition, body, line: self.line })
     }
 
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
@@ -246,6 +251,7 @@ impl Parser {
             then_branch,
             elseif_branches,
             option_else_branch,
+            line: self.line,
         })
     }
 
@@ -282,6 +288,7 @@ impl Parser {
                             end,
                             step,
                             body,
+                            line: self.line,
                         })
                     }
 
@@ -306,6 +313,7 @@ impl Parser {
                                     namelist,
                                     table,
                                     body,
+                                    line: self.line
                                 })
                             } else {
                                 return Err(ParseError::new(self.peek().line, format!("'pairs' expected after 'in'")))
@@ -332,11 +340,13 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::RetStmt {
                     explist: ExpList(vec![]),
+                    line: self.line
                 })
             }
 
             END | ELSE | ELSEIF => Ok(Stmt::RetStmt {
                 explist: ExpList(vec![]),
+                line: self.line
             }),
 
             _ => {
@@ -344,7 +354,7 @@ impl Parser {
                 if let SEMICOLON = self.peek().tok_type {
                     self.advance();
                 }
-                Ok(Stmt::RetStmt { explist })
+                Ok(Stmt::RetStmt { explist, line: self.line })
             }
         }
     }
@@ -368,6 +378,7 @@ impl Parser {
                     name: value,
                     parlist,
                     body,
+                    line: self.line
                 })
             }
 

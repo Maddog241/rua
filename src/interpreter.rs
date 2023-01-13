@@ -17,12 +17,13 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    fn push_env(&mut self, env: Environment) -> Result<(), RuntimeException> {
+    fn push_env(&mut self, env: Environment, line: usize) -> Result<(), RuntimeException> {
+        // eprintln!("push stack");
         self.env_stack.push(env);
         if self.env_stack.len() >= 1000 {
             // not the exact line
             Err(RuntimeException::new_error(
-                0,
+                line,
                 format!("exceeds the maximum recursion depths"),
             ))
         } else {
@@ -32,6 +33,7 @@ impl Interpreter {
 
     fn pop_env(&mut self) {
         self.env_stack.pop().unwrap();
+        // eprintln!("pop stack, stack size: {}", self.env_stack.len());
     }
 
     fn define_local(&mut self, name: &Name, value: Value) {
@@ -74,14 +76,14 @@ impl Interpreter {
         }
     }
 
-    fn assign_table(&mut self, addr: &Address, key: Value, val: Value) -> Result<(), RuntimeException>{
+    fn assign_table(&mut self, addr: &Address, key: Value, val: Value, line: usize) -> Result<(), RuntimeException>{
         match self.addr_space.get_mut(addr) {
             Some(v) => {
                 if let HeapObj::Table { table } = v {
                     table.insert(key, val);
                     Ok(())
                 } else {
-                    Err(RuntimeException::new_error(0, format!("attempt to assign a () value")))
+                    Err(RuntimeException::new_error(line, format!("attempt to assign a {} value", v.ty())))
                 }
             },
             None => unimplemented!()
@@ -92,13 +94,14 @@ impl Interpreter {
         &mut self,
         namelist: &NameList,
         explist: &ExpList,
+        line: usize,
     ) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
         for (i, arg) in explist.0.iter().enumerate() {
             if i+1 < explist.0.len() {
-                values.push(self.eval(arg)?.compress());
+                values.push(self.eval(arg, line)?.compress());
             } else {
-                values.append(&mut self.eval(arg)?.expand())
+                values.append(&mut self.eval(arg, line)?.expand())
             }
         }
         //      define the parameters
@@ -131,14 +134,14 @@ impl Interpreter {
 
     fn exec(&mut self, stmt: &Stmt) -> Result<(), RuntimeException> {
         match stmt {
-            Stmt::Assign { left, right } => self.exec_assign(left, right),
+            Stmt::Assign { left, right, line} => self.exec_assign(left, right, *line),
 
-            Stmt::LocalAssign { left, right } => self.exec_local_assign(left, right),
+            Stmt::LocalAssign { left, right , line} => self.exec_local_assign(left, right, *line),
 
-            Stmt::Break => Err(RuntimeException::Break),
+            Stmt::Break { line } => Err(RuntimeException::Break { line: *line }),
 
-            Stmt::DoBlockEnd { block } => {
-                self.push_env(Environment::new())?;
+            Stmt::DoBlockEnd { block , line} => {
+                self.push_env(Environment::new(), *line)?;
                 self.exec_block(block)?;
                 self.pop_env();
                 Ok(())
@@ -149,13 +152,15 @@ impl Interpreter {
                 name,
                 parlist,
                 body,
+                line: _ ,
             } => self.exec_func_decl(local.clone(), name, parlist, body),
 
             Stmt::FunctionCall {
                 prefixexp,
                 arguments,
+                line, 
             } => {
-                self.eval_func_call(&prefixexp, &arguments)?;
+                self.eval_func_call(&prefixexp, &arguments, *line)?;
                 Ok(())
             }
 
@@ -163,7 +168,8 @@ impl Interpreter {
                 namelist,
                 table,
                 body,
-            } => self.exec_generic_for(namelist, table, body),
+                line, 
+            } => self.exec_generic_for(namelist, table, body, *line),
 
             Stmt::NumericFor {
                 name,
@@ -171,28 +177,30 @@ impl Interpreter {
                 end,
                 step,
                 body,
-            } => self.exec_numeric_for(name, start, end, step, body),
+                line, 
+            } => self.exec_numeric_for(name, start, end, step, body, *line),
 
             Stmt::IfStmt {
                 condition,
                 then_branch,
                 elseif_branches,
                 option_else_branch,
-            } => self.exec_if(condition, then_branch, elseif_branches, option_else_branch),
+                line, 
+            } => self.exec_if(condition, then_branch, elseif_branches, option_else_branch, *line),
 
-            Stmt::WhileStmt { condition, body } => self.exec_while(condition, body),
+            Stmt::WhileStmt { condition, body, line} => self.exec_while(condition, body, *line),
 
-            Stmt::RetStmt { explist } => self.exec_return(explist),
+            Stmt::RetStmt { explist, line } => self.exec_return(explist, *line),
         }
     }
 
-    fn exec_assign(&mut self, left: &VarList, right: &ExpList) -> Result<(), RuntimeException> {
+    fn exec_assign(&mut self, left: &VarList, right: &ExpList, line: usize) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
         for (i, arg) in right.0.iter().enumerate() {
             if i+1 < right.0.len() {
-                values.push(self.eval(arg)?.compress());
+                values.push(self.eval(arg, line)?.compress());
             } else {
-                values.append(&mut self.eval(arg)?.expand())
+                values.append(&mut self.eval(arg, line)?.expand())
             }
         }
 
@@ -202,11 +210,12 @@ impl Interpreter {
                     self.define_global(name, values.get(i).unwrap_or(&Value::Nil).clone())
                 }
                 Var::TableIndex { prefixexp, exp } => {
-                    if let Value::Address { addr } = self.eval(&prefixexp)? {
-                        let key = self.eval(exp)?;
-                        self.assign_table(&addr, key, values[i].clone())?;
+                    let res = self.eval(&prefixexp, line)?;
+                    if let Value::Address { addr } = res {
+                        let key = self.eval(exp, line)?;
+                        self.assign_table(&addr, key, values[i].clone(), line)?;
                     } else {
-                        return Err(RuntimeException::new_error(0, format!("attempt to assign a () value")));
+                        return Err(RuntimeException::new_error(line, format!("attempt to assign a {} value", res.ty())));
                     }
                 }
             }
@@ -215,8 +224,8 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_local_assign(&mut self, left: &NameList, right: &ExpList) -> Result<(), RuntimeException> {
-        self.assign_local_namelist(left, right)
+    fn exec_local_assign(&mut self, left: &NameList, right: &ExpList, line: usize) -> Result<(), RuntimeException> {
+        self.assign_local_namelist(left, right, line)
     }
 
     fn exec_func_decl(
@@ -248,13 +257,14 @@ impl Interpreter {
         namelist: &NameList,
         table: &Exp,
         body: &Block,
+        line: usize,
     ) -> Result<(), RuntimeException> {
-        match self.eval(table)? {
+        match self.eval(table, line)? {
             Value::Address { addr } => {
                 let table = self.dereference(&addr).unwrap();
                 if let HeapObj::Table { table } = table {
                     for (k, v) in table {
-                        self.push_env(Environment::new())?;
+                        self.push_env(Environment::new(), line)?;
 
                         let values = vec![k, v];
                         for (i, name) in namelist.0.iter().enumerate() {
@@ -264,7 +274,7 @@ impl Interpreter {
                         // handle break
                         match self.exec_block(&body) {
                             Ok(_) => {},
-                            Err(RuntimeException::Break) => {
+                            Err(RuntimeException::Break { line: _ }) => {
                                 self.pop_env();
                                 break;
                             },
@@ -276,10 +286,10 @@ impl Interpreter {
 
                     Ok(())
                 } else {
-                    Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
+                    Err(RuntimeException::new_error(line, format!("bad argument to 'pairs' (table expected, got ())")))
                 }
             },
-            _ => Err(RuntimeException::new_error(0, format!("bad argument to 'pairs' (table expected, got ())")))
+            _ => Err(RuntimeException::new_error(line, format!("bad argument to 'pairs' (table expected, got ())")))
         }
     }
 
@@ -305,10 +315,11 @@ impl Interpreter {
         end: &Exp,
         step: &Exp,
         body: &Block,
+        line: usize,
     ) -> Result<(), RuntimeException> {
         // defines the loop variable
-        self.push_env(Environment::new())?;
-        let start_val = self.eval(start)?;
+        self.push_env(Environment::new(), line)?;
+        let start_val = self.eval(start, line)?;
         self.define_local(name, start_val);
 
         // generate condition expression and update statement
@@ -327,11 +338,12 @@ impl Interpreter {
                 operator: Token::new(0, TokenType::PLUS),
                 right: Box::new(step.clone()),
             }]),
+            line,
         };
 
         let new_body = Block {
             statements: vec![
-                Stmt::DoBlockEnd { block: body.clone() },
+                Stmt::DoBlockEnd { block: body.clone(), line },
                 update
             ]
         };
@@ -340,6 +352,7 @@ impl Interpreter {
         let whilestmt = Stmt::WhileStmt {
             condition,
             body: new_body,
+            line,
         };
 
         self.exec(&whilestmt)?;
@@ -355,18 +368,19 @@ impl Interpreter {
         then_branch: &Block,
         elseif_branches: &Vec<(Exp, Block)>,
         option_else_branch: &Option<Block>,
+        line: usize,
     ) -> Result<(), RuntimeException> {
-        let cond = self.eval(&condition)?;
+        let cond = self.eval(&condition, line)?;
         if cond.truthy() {
-            self.push_env(Environment::new())?;
+            self.push_env(Environment::new(), line)?;
             self.exec_block(then_branch)?;
             self.pop_env();
         } else {
             let mut flag = false;
             for (exp, block) in elseif_branches {
-                let cond = self.eval(&exp)?;
+                let cond = self.eval(&exp, line)?;
                 if cond.truthy() {
-                    self.push_env(Environment::new())?;
+                    self.push_env(Environment::new(), line)?;
                     self.exec_block(block)?;
                     self.pop_env();
                     flag = true;
@@ -376,7 +390,7 @@ impl Interpreter {
 
             if !flag {
                 if let Some(else_branch) = option_else_branch {
-                    self.push_env(Environment::new())?;
+                    self.push_env(Environment::new(), line)?;
                     self.exec_block(else_branch)?;
                     self.pop_env();
                 }
@@ -386,16 +400,16 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_while(&mut self, condition: &Exp, body: &Block) -> Result<(), RuntimeException> {
-        let mut cond = self.eval(&condition)?;
+    fn exec_while(&mut self, condition: &Exp, body: &Block, line: usize) -> Result<(), RuntimeException> {
+        let mut cond = self.eval(&condition, line)?;
         while cond.truthy() {
-            self.push_env(Environment::new())?;
+            self.push_env(Environment::new(), line)?;
             match self.exec_block(&body) {
                 Ok(_) => {
-                    cond = self.eval(&condition)?;
+                    cond = self.eval(&condition, line)?;
                     self.pop_env();
                 }
-                Err(RuntimeException::Break) => {
+                Err(RuntimeException::Break { line: _}) => {
                     self.pop_env();
                     break;
                 },
@@ -406,33 +420,33 @@ impl Interpreter {
         Ok(())
     }
 
-    fn exec_return(&mut self, explist: &ExpList) -> Result<(), RuntimeException> {
+    fn exec_return(&mut self, explist: &ExpList, line: usize) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
 
         for exp in explist.0.iter() {
-            values.push(self.eval(exp)?);
+            values.push(self.eval(exp, line)?);
         }
 
         Err(RuntimeException::RetResult { values })
     }
 
-    fn eval(&mut self, exp: &Exp) -> Result<Value, RuntimeException> {
+    fn eval(&mut self, exp: &Exp, line: usize) -> Result<Value, RuntimeException> {
         match exp {
             Exp::Literal { value } => self.eval_literal(value),
-            Exp::Unary { operator, right } => self.eval_unary(operator, right),
+            Exp::Unary { operator, right } => self.eval_unary(operator, right, line),
             Exp::Binary {
                 left,
                 operator,
                 right,
-            } => self.eval_binary(operator, left, right),
+            } => self.eval_binary(operator, left, right, line),
             Exp::FunctionCall {
                 prefixexp,
                 arguments,
-            } => self.eval_func_call(prefixexp, arguments),
-            Exp::Var { var } => self.eval_var(var),
+            } => self.eval_func_call(prefixexp, arguments, line),
+            Exp::Var { var } => self.eval_var(var, line),
             Exp::Function { funcbody } => self.eval_func_exp(funcbody),
-            Exp::TableConstructor { fieldlist } => self.eval_table(fieldlist),
-            Exp::Grouping { exp } => self.eval(exp),
+            Exp::TableConstructor { fieldlist } => self.eval_table(fieldlist, line),
+            Exp::Grouping { exp } => self.eval(exp, line),
         }
     }
 
@@ -449,8 +463,8 @@ impl Interpreter {
         }
     }
 
-    fn eval_unary(&mut self, op: &Token, right: &Exp) -> Result<Value, RuntimeException> {
-        let right = self.eval(right)?;
+    fn eval_unary(&mut self, op: &Token, right: &Exp, line: usize) -> Result<Value, RuntimeException> {
+        let right = self.eval(right, line)?;
         match op.tok_type {
             TokenType::NOT => {
                 // all values except for 'nil' and 'false' are considered true
@@ -480,13 +494,13 @@ impl Interpreter {
     /// the binary + (addition), - (subtraction), * (multiplication), / (division), % (modulo), and ^ (exponentiation); and unary - (negation).
     /// If the operands are numbers, or strings that can be converted to numbers (see §2.2.1), then all operations have the usual meaning.
     /// Exponentiation works for any exponent. For instance, x^(-0.5) computes the inverse of the square root of x.
-    fn eval_binary(&mut self, op: &Token, left: &Exp, right: &Exp) -> Result<Value, RuntimeException> {
-        let left = self.eval(left)?;
+    fn eval_binary(&mut self, op: &Token, left: &Exp, right: &Exp, line: usize) -> Result<Value, RuntimeException> {
+        let left = self.eval(left, line)?;
 
         match op.tok_type {
             TokenType::PLUS => {
                 //  if the operand is a string and can be converted to num, then it will be valid
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num { value: a+b })
@@ -499,7 +513,7 @@ impl Interpreter {
             }
 
             TokenType::MINUS => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num { value: a-b })
@@ -512,7 +526,7 @@ impl Interpreter {
             }
 
             TokenType::MUL => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num { value: a*b })
@@ -525,7 +539,7 @@ impl Interpreter {
             }
 
             TokenType::DIV => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num { value: a/b })
@@ -538,7 +552,7 @@ impl Interpreter {
             }
 
             TokenType::FLOORDIV => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num{ value: OrderedFloat::from((a/b).floor()) })
@@ -551,7 +565,7 @@ impl Interpreter {
             }
 
             TokenType::MOD => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 match (left.to_number(), right.to_number()) {
                     (Some(a), Some(b)) => {
                         Ok(Value::Num{ value: OrderedFloat::from(a%b) })
@@ -564,47 +578,51 @@ impl Interpreter {
             }
 
             TokenType::DOTDOT => {
-                let right = self.eval(right)?;
-                if let (Value::Str { value: mut a }, Value::Str { value: b }) = (left, right) {
-                    a.push_str(&b);
-                    Ok(Value::Str { value: a })
-                } else {
-                    Err(RuntimeException::new_error(
-                        op.line,
-                        format!("attempt to concat () with ()"),
-                    ))
+                let right = self.eval(right, line)?;
+                let (l_ty, r_ty) = (left.ty(), right.ty());
+                match (left, right) {
+                    (Value::Str { value: mut a }, Value::Str { value: b }) => {
+                        a.push_str(&b);
+                        Ok(Value::Str { value: a })
+                    },
+                    _ => {
+                        Err(RuntimeException::new_error(
+                            op.line,
+                            format!("attempt to concat {} with {}", l_ty, r_ty),
+                        ))
+                    }
                 }
             }
 
             TokenType::LESS => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 self.less(&left, &right, op.line)
             }
 
             TokenType::LESSEQUAL => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 self.less_equal(&left, &right, op.line)
             }
 
             TokenType::GREATER => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 self.greater(&left, &right, op.line)
             }
 
             TokenType::GREATEREQUAL => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 self.greater_equal(&left, &right, op.line)
             }
 
             TokenType::EQUALEQUAL => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 Ok(Value::Bool {
                     b: self.equal(&left, &right),
                 })
             }
 
             TokenType::NOTEQUAL => {
-                let right = self.eval(right)?;
+                let right = self.eval(right, line)?;
                 Ok(Value::Bool {
                     b: !self.equal(&left, &right),
                 })
@@ -613,14 +631,14 @@ impl Interpreter {
             TokenType::AND => {
                 // short circuit
                 Ok(Value::Bool {
-                    b: left.truthy() && self.eval(right)?.truthy(),
+                    b: left.truthy() && self.eval(right, line)?.truthy(),
                 })
             }
 
             TokenType::OR => {
                 // short circuit
                 Ok(Value::Bool {
-                    b: left.truthy() || self.eval(right)?.truthy(),
+                    b: left.truthy() || self.eval(right, line)?.truthy(),
                 })
             }
 
@@ -634,7 +652,7 @@ impl Interpreter {
         Ok(Value::Address { addr })
     }
 
-    fn eval_var(&mut self, var: &Var) -> Result<Value, RuntimeException> {
+    fn eval_var(&mut self, var: &Var, line: usize) -> Result<Value, RuntimeException> {
         match var {
             Var::Name { name } => {
                 match self.get(name) {
@@ -643,19 +661,19 @@ impl Interpreter {
                 }
             }
             Var::TableIndex { prefixexp, exp } => {
-                let table_addr = self.eval(&prefixexp)?;
+                let table_addr = self.eval(&prefixexp, line)?;
                 if let Value::Address { addr } = table_addr {
                     let table = self.dereference(&addr);
 
-                    let i = self.eval(&exp)?;
+                    let i = self.eval(&exp, line)?;
 
                     if let Some(HeapObj::Table { table }) = table {
                         Ok(table.index(&i))
                     } else {
-                        Err(RuntimeException::new_error(0, format!("attempt to index a () value")))
+                        Err(RuntimeException::new_error(line, format!("attempt to index a function value")))
                     }
                 } else {
-                    Err(RuntimeException::new_error(0, format!("attempt to index a () value")))
+                    Err(RuntimeException::new_error(line, format!("attempt to index a {} value", table_addr.ty())))
                 }
             }
         }
@@ -665,8 +683,9 @@ impl Interpreter {
         &mut self,
         prefixexp: &Exp,
         arguments: &ExpList,
+        line: usize,
     ) -> Result<Value, RuntimeException> {
-        let func_name = self.eval(prefixexp)?;
+        let func_name = self.eval(prefixexp, line)?;
         if let Value::Address {
             addr
         } = func_name
@@ -675,9 +694,9 @@ impl Interpreter {
                 let rec_n = self.env_stack.len();
                 self.env_stack.append(&mut closure);
     
-                self.push_env(Environment::new())?;
+                self.push_env(Environment::new(), line)?;
                 // define the local parameters
-                self.assign_local_namelist(&parameters, arguments)?;
+                self.assign_local_namelist(&parameters, arguments, line)?;
 
                 let res = self.exec_block(&body);
 
@@ -697,30 +716,30 @@ impl Interpreter {
                 Ok(Value::Nil)
             } else {
                 Err(RuntimeException::new_error(
-                    0,
+                    line,
                     format!("attempt to call a non-function value"),
                 ))
             }
         } else if let Value::Print = func_name {
-            self.call_print(arguments)
+            self.call_print(arguments, line)
         } else {
             // not a callable object
             Err(RuntimeException::new_error(
-                0,
+                line,
                 format!("attempt to call a {} value", func_name.ty()),
             ))
         }
     }
 
-    fn eval_table(&mut self, fieldlist: &FieldList) -> Result<Value, RuntimeException> {
+    fn eval_table(&mut self, fieldlist: &FieldList, line: usize) -> Result<Value, RuntimeException> {
         let mut table = Table::new();
         let mut num_index = 1.0;
 
         for field in fieldlist.0.iter() {
             match &field.name {
-                Some(name) => table.insert(Value::Str { value: name.clone() }, self.eval(&field.exp)?),
+                Some(name) => table.insert(Value::Str { value: name.clone() }, self.eval(&field.exp, line)?),
                 None => {
-                    table.insert(Value::Num { value: OrderedFloat::from(num_index) }, self.eval(&field.exp)?);
+                    table.insert(Value::Num { value: OrderedFloat::from(num_index) }, self.eval(&field.exp, line)?);
                     num_index += 1.0;
                 }
             }
@@ -755,7 +774,7 @@ impl Interpreter {
             (Value::Str { value: a }, Value::Str { value: b }) => Ok(Value::Bool { b: a < b }),
             _ => Err(RuntimeException::new_error(
                 line,
-                format!("attempt to compare () with ()"),
+                format!("attempt to compare {} with {}", left.ty(), right.ty()),
             )),
         }
     }
@@ -769,7 +788,7 @@ impl Interpreter {
             (Value::Str { value: a }, Value::Str { value: b }) => Ok(Value::Bool { b: a <= b }),
             _ => Err(RuntimeException::new_error(
                 line,
-                format!("attempt to compare () with ()"),
+                format!("attempt to compare {} with {}", left.ty(), right.ty()),
             )),
         }
     }
@@ -793,10 +812,10 @@ impl Interpreter {
         self.less_equal(right, left, line)
     }
 
-    fn call_print(&mut self, arguments: &ExpList) -> Result<Value, RuntimeException> {
+    fn call_print(&mut self, arguments: &ExpList, line: usize) -> Result<Value, RuntimeException> {
         let mut values = Vec::new();
         for arg in arguments.0.iter() {
-            values.push(self.eval(&arg)?);
+            values.push(self.eval(&arg, line)?);
         }
 
         for value in values {
@@ -817,7 +836,9 @@ pub enum RuntimeException {
     RetResult {
         values: Vec<Value>
     },
-    Break,
+    Break {
+        line: usize
+    },
 }
 
 
@@ -832,7 +853,7 @@ impl RuaError for RuntimeException {
         match self {
             Self::RuntimeError { line, message } => eprintln!("rua: {}:{}: {}", filename, line, message),
             Self::RetResult { values : _} => {},
-            Self::Break => eprintln!("rua: {}:{}: <break> at line {} not inside a loop", filename, 0, 0)
+            Self::Break { line } => eprintln!("rua: {}:{}: <break> at line {} not inside a loop", filename, line, line)
         }
     }
 }

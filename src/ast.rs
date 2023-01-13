@@ -33,24 +33,31 @@ pub enum Stmt {
     Assign {
         left: VarList,
         right: ExpList,
+        line: usize, 
     },
     LocalAssign {
         left: NameList,
         right: ExpList,
+        line: usize, 
     },
-    Break,
+    Break{
+        line: usize, 
+    },
     DoBlockEnd {
         block: Block,
+        line: usize, 
     },
     WhileStmt {
         condition: Exp,
         body: Block,
+        line: usize, 
     },
     IfStmt {
         condition: Exp,
         then_branch: Block,
         elseif_branches: Vec<(Exp, Block)>,
         option_else_branch: Option<Block>,
+        line: usize, 
     },
     NumericFor {
         name: Name,
@@ -58,35 +65,40 @@ pub enum Stmt {
         end: Exp,
         step: Exp,
         body: Block,
+        line: usize, 
     },
     GenericFor {
         namelist: NameList,
         table: Exp,
         body: Block,
+        line: usize, 
     },
     FuncDecl {
         local: bool,
         name: Name,
         parlist: NameList,
         body: Block,
+        line: usize, 
     },
     FunctionCall {
         prefixexp: Box<Exp>,
         arguments: ExpList,
+        line: usize, 
     },
     RetStmt {
         explist: ExpList,
+        line: usize, 
     },
 }
 
 impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Assign { left, right } => {
+            Self::Assign { left, right , line: _} => {
                 write!(f, "{} = {}\n", left, right)
             }
 
-            Self::LocalAssign { left, right } => {
+            Self::LocalAssign { left, right, line: _ } => {
                 if right.0.is_empty() {
                     write!(f, "local {}\n", left)
                 } else {
@@ -97,15 +109,16 @@ impl fmt::Display for Stmt {
             Self::FunctionCall {
                 prefixexp,
                 arguments,
+                line: _,
             } => {
                 write!(f, "{}({})\n", prefixexp, arguments)
             }
 
-            Self::Break => {
+            Self::Break { line: _ } => {
                 write!(f, "break\n")
             }
 
-            Self::DoBlockEnd { block } => {
+            Self::DoBlockEnd { block , line: _} => {
                 write!(f, "{}", block)
             }
 
@@ -114,6 +127,7 @@ impl fmt::Display for Stmt {
                 name,
                 parlist,
                 body,
+                line: _,
             } => {
                 if *local {
                     write!(
@@ -131,6 +145,7 @@ impl fmt::Display for Stmt {
                 then_branch,
                 elseif_branches,
                 option_else_branch,
+                line: _,
             } => {
                 write!(f, "if({}) {{\n{}}} ", condition, then_branch)?;
                 for (condition, elseif_branch) in elseif_branches.iter() {
@@ -147,7 +162,7 @@ impl fmt::Display for Stmt {
                 }
             }
 
-            Self::WhileStmt { condition, body } => {
+            Self::WhileStmt { condition, body , line: _} => {
                 write!(f, "while({}) {{\n{}}}\n", condition, body)
             }
 
@@ -157,6 +172,7 @@ impl fmt::Display for Stmt {
                 end,
                 step,
                 body,
+                line: _,
             } => {
                 write!(
                     f,
@@ -169,6 +185,7 @@ impl fmt::Display for Stmt {
                 namelist,
                 table,
                 body,
+                line: _,
             } => {
                 write!(
                     f,
@@ -177,7 +194,7 @@ impl fmt::Display for Stmt {
                 )
             }
 
-            Self::RetStmt { explist } => {
+            Self::RetStmt { explist, line: _} => {
                 write!(f, "return {}\n", explist)
             }
         }
