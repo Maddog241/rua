@@ -1,30 +1,18 @@
-use std::{fs::read, process::exit};
-
 use crate::{
     ast::Block,
+    interpreter::{Interpreter, RuntimeException},
     lexer::{LexError, Lexer},
     parser::{ParseError, Parser},
-    token::Token, interpreter::{RuntimeException, Interpreter},
+    token::Token,
 };
 
 pub struct Rua {
-    source: Vec<u8>,
+    pub source: Vec<u8>,
 }
 
 impl Rua {
-    pub fn new(filename: &str) -> Self {
-        let source = read(filename);
-
-        match source {
-            Ok(source) => {
-                // execute the code
-                Self { source }
-            }
-            Err(_e) => {
-                eprintln!("failed to open source file");
-                exit(1)
-            }
-        }
+    pub fn new(source: Vec<u8>) -> Self {
+        Self { source }
     }
 
     pub fn lex(&mut self) -> Result<Vec<Token>, LexError> {

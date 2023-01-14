@@ -185,12 +185,10 @@ impl<'a> Lexer<'a> {
                     }
                 }
                 // string
-                b'\'' | b'"' => {
-                    match self.lex_line_string(self.source[self.current]) {
-                        Ok(tok) => tokens.push(tok),
-                        Err(e) => return Err(e),
-                    }
-                }
+                b'\'' | b'"' => match self.lex_line_string(self.source[self.current]) {
+                    Ok(tok) => tokens.push(tok),
+                    Err(e) => return Err(e),
+                },
                 b' ' | b'\r' | b'\t' => {
                     self.advance(1);
                 }
@@ -266,30 +264,30 @@ impl<'a> Lexer<'a> {
             } else if c == b'\\' {
                 match self.look_ahead() {
                     Some(b'n') => {
+                        self.source.remove(self.current);
                         self.source[self.current] = b'\n';
-                        self.source[self.current+1] = b'\0';
                         self.advance(2);
-                    },
+                    }
                     Some(b't') => {
+                        self.source.remove(self.current);
                         self.source[self.current] = b'\t';
-                        self.source[self.current+1] = b'\0';
                         self.advance(2);
                     }
                     Some(b'\\') => {
+                        self.source.remove(self.current);
                         self.source[self.current] = b'\\';
-                        self.source[self.current+1] = b'\0';
                         self.advance(2);
-                    },
+                    }
                     Some(b'\'') => {
+                        self.source.remove(self.current);
                         self.source[self.current] = b'\'';
-                        self.source[self.current+1] = b'\0';
                         self.advance(2);
-                    },
+                    }
                     Some(b'"') => {
+                        self.source.remove(self.current);
                         self.source[self.current] = b'"';
-                        self.source[self.current+1] = b'\0';
                         self.advance(2);
-                    },
+                    }
                     _ => self.advance(1),
                 }
             } else {
@@ -308,6 +306,13 @@ impl<'a> Lexer<'a> {
 
     fn lex_long_string(&mut self) -> Result<Token, LexError> {
         let start = self.current;
+        self.advance(2);
+
+        // the new line character immediately following '[[' is ignored
+        if !self.at_end() && self.source[self.current] == b'\n' {
+            self.source.remove(self.current);
+        }
+
         while !self.at_end() {
             if self.source[self.current] == b']' {
                 // check end of string

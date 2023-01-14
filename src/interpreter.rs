@@ -771,7 +771,7 @@ impl Interpreter {
             }) = self.dereference(&addr)
             {
                 let rec_n = self.env_stack.len();
-                
+
                 // push the environment when the closure was defined onto the stack
                 // in order to 'recall' those old on stack values
                 self.env_stack.append(&mut closure);

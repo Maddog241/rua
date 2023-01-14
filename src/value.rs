@@ -101,7 +101,7 @@ impl fmt::Display for Value {
             Self::Bool { b } => write!(f, "{}", b),
             Self::Nil => write!(f, "nil"),
             Self::Num { value } => write!(f, "{}", value),
-            Self::Str { value } => write!(f, "'{}'", value),
+            Self::Str { value } => write!(f, "{}", value),
             Self::Address { addr } => write!(f, "{}", addr),
             Self::ValueList { values } => {
                 let n = values.len();
