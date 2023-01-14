@@ -7,6 +7,7 @@ use crate::{
     },
 };
 
+// use this macro to assert and eat tokens
 macro_rules! consume {
     ( $value: expr, $expected_pat: pat, $expected_expr: expr) => {{
         let tok = $value;
@@ -22,23 +23,6 @@ macro_rules! consume {
             ))
         }
     }};
-}
-
-pub struct ParseError {
-    line: usize,
-    message: String,
-}
-
-impl ParseError {
-    pub fn new(line: usize, message: String) -> Self {
-        ParseError { line, message }
-    }
-}
-
-impl RuaError for ParseError {
-    fn report(&self, filename: &str) {
-        eprintln!("rua: {}:{}: {}", filename, self.line, self.message);
-    }
 }
 
 pub struct Parser {
@@ -94,6 +78,7 @@ impl Parser {
 
                             consume!(self.advance(), EQUAL, EQUAL)?;
 
+                            // parse expressions
                             let explist = self.parse_explist()?;
 
                             statements.push(Stmt::Assign {
@@ -111,7 +96,9 @@ impl Parser {
                             arguments,
                             line: self.line,
                         }),
-                        // grouping, error
+                        // the returned value can only be Exp::Grouping, which is impossible
+                        // because it starts with a name, not a LEFTPAREN.
+                        // so this is unreachable
                         _ => {
                             return Err(ParseError::new(
                                 self.peek().line,
@@ -143,7 +130,7 @@ impl Parser {
                     statements.push(self.parse_while()?);
                 }
 
-                // if exp then block {elseif exp then block} {else block end}
+                // if exp then block {elseif exp then block} [else block] end
                 IF => {
                     statements.push(self.parse_if()?);
                 }
@@ -187,6 +174,7 @@ impl Parser {
         Ok(Block { statements })
     }
 
+    /// local namelist ('=' explist)?
     fn parse_local_assignment(&mut self) -> Result<Stmt, ParseError> {
         let namelist = self.parse_namelist()?;
         if let EQUAL = self.peek().tok_type {
@@ -207,6 +195,7 @@ impl Parser {
         }
     }
 
+    /// while exp do block end
     fn parse_while(&mut self) -> Result<Stmt, ParseError> {
         consume!(self.advance(), WHILE, WHILE)?;
         let condition = self.parse_expression()?;
@@ -221,6 +210,7 @@ impl Parser {
         })
     }
 
+    /// if exp then block (elseif exp then block)* (else block)? end
     fn parse_if(&mut self) -> Result<Stmt, ParseError> {
         // if exp then block
         consume!(self.advance(), IF, IF)?;
@@ -279,6 +269,7 @@ impl Parser {
                                 self.advance();
                                 self.parse_expression()?
                             }
+                            // no given step value, use the default 1.0
                             _ => Exp::Literal {
                                 value: Token::new(self.line, NUMBER { value: 1.0 }),
                             },
@@ -300,7 +291,7 @@ impl Parser {
 
                     _ => {
                         // generic for
-                        // get back one step!!!!!!
+                        // for namelist in pairs(exp) do block end
                         let namelist = self.parse_namelist()?;
                         consume!(self.advance(), IN, IN)?;
 
@@ -347,6 +338,7 @@ impl Parser {
     fn parse_return(&mut self) -> Result<Stmt, ParseError> {
         consume!(self.advance(), RETURN, RETURN)?;
         match self.peek().tok_type {
+            // no return values
             SEMICOLON => {
                 self.advance();
                 Ok(Stmt::RetStmt {
@@ -355,6 +347,7 @@ impl Parser {
                 })
             }
 
+            // no return values
             END | ELSE | ELSEIF => Ok(Stmt::RetStmt {
                 explist: ExpList(vec![]),
                 line: self.line,
@@ -373,6 +366,9 @@ impl Parser {
         }
     }
 
+    /// ('local')? function Name funcbody
+    /// 
+    /// funcbody -> '(' namelist? ')' block end
     fn parse_function_decl(&mut self, local: bool) -> Result<Stmt, ParseError> {
         consume!(self.advance(), FUNCTION, FUNCTION)?;
         match self.peek().tok_type {
@@ -508,7 +504,7 @@ impl Parser {
         Ok(left)
     }
 
-    /// unary -> (not | '-') unary | power
+    /// unary -> (not | '-' | '#') unary | power
     fn parse_unary(&mut self) -> Result<Exp, ParseError> {
         if self.peek_unary() {
             let operator = self.advance();
@@ -550,13 +546,16 @@ impl Parser {
     }
 
     /// prefixexp -> Name (('[' exp ']') | args | ('.' Name) )*
+    /// 
     ///            | '(' exp ')' (('[' exp ']') | args | ('.' Name) )*
+    /// 
     ///            | literal
     ///
     /// args -> '(' [explist] ')' | tableconstructor | String
     fn parse_prefixexp(&mut self) -> Result<Exp, ParseError> {
         match self.peek().tok_type {
             // start with grouping
+            // prefixexp -> '(' exp ')' (('[' exp ']') | args | ('.' Name) )*
             LEFTPAREN => {
                 self.advance();
                 let mut head_exp = self.parse_expression()?;
@@ -596,6 +595,7 @@ impl Parser {
                             }
                             self.advance();
                         }
+                        // args -> '(' [explist] ')' | tableconstructor | String
                         LEFTPAREN => {
                             self.advance();
                             let arguments = if let RIGHTPAREN = self.peek().tok_type {
@@ -642,6 +642,7 @@ impl Parser {
             }
 
             // start with Name
+            // prefixexp -> Name (('[' exp ']') | args | ('.' Name) )*
             NAME { value } => {
                 self.advance();
                 let mut head_exp = Exp::Var {
@@ -722,7 +723,10 @@ impl Parser {
         }
     }
 
+
     fn parse_var(&mut self) -> Result<Var, ParseError> {
+        // make use of parse_prefixexp() function
+        // the result is 'var' or 'tableindex' or 'grouping'
         let exp = self.parse_prefixexp()?;
         if let Exp::Var { var } = exp {
             Ok(var)
@@ -733,6 +737,8 @@ impl Parser {
             ))
         }
     }
+
+    /// explist -> exp (',' exp)*
     fn parse_explist(&mut self) -> Result<ExpList, ParseError> {
         let mut explist = ExpList(Vec::new());
 
@@ -748,12 +754,15 @@ impl Parser {
         Ok(explist)
     }
 
+    /// namelist -> Name (',' Name)*
     fn parse_namelist(&mut self) -> Result<NameList, ParseError> {
         let mut namelist = NameList(Vec::new());
         if let NAME { value } = self.peek().tok_type {
             namelist.0.push(value);
             self.advance();
         } else {
+            // parse_namelist is called when the current token is Name
+            // so this branch is unreachable
             unimplemented!()
         }
 
@@ -777,6 +786,7 @@ impl Parser {
         Ok(namelist)
     }
 
+    /// tableconstructor -> '{' fieldlist? '}'
     fn parse_table_constructor(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), LEFTBRACE, LEFTBRACE)?;
         let fieldlist = if let RIGHTBRACE = self.peek().tok_type {
@@ -789,17 +799,12 @@ impl Parser {
     }
 
     /// fieldlist -> field (fieldsep field)* (fieldsep)?
-    /// 
-    /// field -> '[' exp ']' | Name '=' exp | exp 
-    /// 
-    /// fieldsep -> ',' | 
-    /// 
-    ///             ';'
     fn parse_fieldlist(&mut self) -> Result<FieldList, ParseError> {
         let mut fields = vec![self.parse_field()?];
         while let COMMA | SEMICOLON = self.peek().tok_type {
             self.advance();
             if let RIGHTBRACE = self.peek().tok_type {
+                // the end of fieldlist
                 break;
             }
             fields.push(self.parse_field()?);
@@ -808,6 +813,9 @@ impl Parser {
         Ok(FieldList(fields))
     }
 
+    /// field -> Name '=' exp | exp 
+    /// 
+    /// fieldsep -> ',' | ';'
     fn parse_field(&mut self) -> Result<Field, ParseError> {
         if let Some(EQUAL) = self.look_ahead() {
             // Name '=' exp
@@ -831,6 +839,9 @@ impl Parser {
         }
     }
 
+    /// functiondef -> function funcbody
+    /// 
+    /// funcbody -> '(' namelist? ')' block end
     fn parse_function(&mut self) -> Result<Exp, ParseError> {
         consume!(self.advance(), FUNCTION, FUNCTION)?;
         consume!(self.advance(), LEFTPAREN, LEFTPAREN)?;
@@ -848,6 +859,7 @@ impl Parser {
         })
     }
 
+    /// literal -> number | string | nil | true | false
     fn parse_literal(&mut self) -> Result<Exp, ParseError> {
         let tok = self.peek();
         match tok.tok_type {
@@ -983,5 +995,22 @@ impl Parser {
         }
 
         Some(self.tokens[self.current + 1].tok_type.clone())
+    }
+}
+
+pub struct ParseError {
+    line: usize,
+    message: String,
+}
+
+impl ParseError {
+    pub fn new(line: usize, message: String) -> Self {
+        ParseError { line, message }
+    }
+}
+
+impl RuaError for ParseError {
+    fn report(&self, filename: &str) {
+        eprintln!("rua: {}:{}: {}", filename, self.line, self.message);
     }
 }

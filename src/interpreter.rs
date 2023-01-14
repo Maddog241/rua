@@ -17,12 +17,13 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
+    /// push an environment onto the stack
     fn push_env(&mut self, env: Environment, line: usize) -> Result<(), RuntimeException> {
         self.env_stack.push(env);
         if self.env_stack.len() >= 1000 {
             Err(RuntimeException::new_error(
                 line,
-                format!("exceeds the maximum recursion depths"),
+                format!("exceeds the maximum stack sizes"),
             ))
         } else {
             Ok(())
@@ -33,10 +34,12 @@ impl Interpreter {
         self.env_stack.pop().unwrap();
     }
 
+    /// defines the variable in the top most environment
     fn define_local(&mut self, name: &Name, value: Value) {
         self.env_stack.last_mut().unwrap().define(name, value)
     }
 
+    /// assign the variable 'name'
     fn define_global(&mut self, name: &Name, value: Value) {
         for index in (0..self.env_stack.len()).rev() {
             if self.env_stack[index].contain(name) || index == 0 {
@@ -46,6 +49,7 @@ impl Interpreter {
         }
     }
 
+    /// get variable value
     fn get(&self, name: &Name) -> Option<&Value> {
         let n = self.env_stack.len();
         for index in (0..n).rev() {
@@ -57,7 +61,7 @@ impl Interpreter {
         None
     }
 
-    /// value must be a function or a table
+    /// alloc space for a function or table object
     fn alloc(&mut self, obj: HeapObj) -> Address {
         let old_addr = self.cur_addr;
         self.cur_addr += 128; // 128 is just for fun, cause it's not the real memory layout :)
@@ -66,6 +70,7 @@ impl Interpreter {
         Address::new(old_addr)
     }
 
+    /// given address, return the function or table
     fn dereference(&mut self, addr: &Address) -> Option<HeapObj> {
         match self.addr_space.get(addr) {
             Some(v) => Some(v.clone()),
@@ -73,6 +78,7 @@ impl Interpreter {
         }
     }
 
+    /// assgin a table field
     fn assign_table(
         &mut self,
         addr: &Address,
@@ -96,6 +102,7 @@ impl Interpreter {
         }
     }
 
+    /// assign a list of names, store them in the top most environment
     fn assign_local_namelist(
         &mut self,
         namelist: &NameList,
@@ -103,6 +110,7 @@ impl Interpreter {
         line: usize,
     ) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
+        // expand the last value if it results from a functioncall
         for (i, arg) in explist.0.iter().enumerate() {
             if i + 1 < explist.0.len() {
                 values.push(self.eval(arg, line)?.compress());
@@ -110,7 +118,7 @@ impl Interpreter {
                 values.append(&mut self.eval(arg, line)?.expand())
             }
         }
-        //      define the parameters
+        // define the parameters
         for i in 0..namelist.0.len() {
             let value = values.get(i).unwrap_or(&Value::Nil);
             self.define_local(&namelist.0[i], value.clone())
@@ -126,7 +134,7 @@ impl Interpreter {
         Self {
             env_stack: vec![Environment::global_env()],
             addr_space: HashMap::new(),
-            cur_addr: 0x0000ffff0000,
+            cur_addr: 0x0000ffff0000, // a value just for fun
         }
     }
 
@@ -144,6 +152,8 @@ impl Interpreter {
 
             Stmt::LocalAssign { left, right, line } => self.exec_local_assign(left, right, *line),
 
+            // throws RuntimeException::Break to automatically unwind the rust call stack, 
+            // this will be catched in a loop exec function
             Stmt::Break { line } => Err(RuntimeException::Break { line: *line }),
 
             Stmt::DoBlockEnd { block, line } => {
@@ -216,6 +226,7 @@ impl Interpreter {
         right: &ExpList,
         line: usize,
     ) -> Result<(), RuntimeException> {
+        // evaluate values on the right hand side
         let mut values = Vec::new();
         for (i, arg) in right.0.iter().enumerate() {
             if i + 1 < right.0.len() {
@@ -226,6 +237,7 @@ impl Interpreter {
         }
         
         // evaluate expressions on the left hand side
+        // expression can only reside in TableIndex's prefixes and keys
         let mut pres_keys = vec![(Value::Nil, Value::Nil); left.vars.len()];
         for i in 0..left.vars.len() {
             if let Var::TableIndex { prefixexp, exp } = &left.vars[i] {
@@ -234,6 +246,7 @@ impl Interpreter {
             }
         }
 
+        // assign
         for i in 0..left.vars.len() {
             match &left.vars[i] {
                 Var::Name { name } => {
@@ -266,6 +279,7 @@ impl Interpreter {
         self.assign_local_namelist(left, right, line)
     }
 
+    /// defines the function and assign it to a variable
     fn exec_func_decl(
         &mut self,
         local: bool,
@@ -297,9 +311,9 @@ impl Interpreter {
         body: &Block,
         line: usize,
     ) -> Result<(), RuntimeException> {
-        let res = self.eval(table, line)?;
+        let res = self.eval(table, line)?.compress();
         let res_ty = res.ty();
-        match res.compress() {
+        match res {
             Value::Address { addr } => {
                 let table = self.dereference(&addr).unwrap();
                 if let HeapObj::Table { table } = table {
@@ -307,17 +321,20 @@ impl Interpreter {
                         self.push_env(Environment::new(), line)?;
 
                         let values = vec![k, v];
+                        // assign namelist with valuelist (k, v)
                         for (i, name) in namelist.0.iter().enumerate() {
                             self.define_local(&name, values.get(i).unwrap_or(&Value::Nil).clone());
                         }
 
-                        // handle break
+                        // catches the Break Exception
                         match self.exec_block(&body) {
                             Ok(_) => {}
                             Err(RuntimeException::Break { line: _ }) => {
+                                // pop the stack before break the rust loop.
                                 self.pop_env();
                                 break;
                             }
+                            // error occured, throw it 
                             e => e?,
                         }
 
@@ -425,6 +442,7 @@ impl Interpreter {
             self.exec_block(then_branch)?;
             self.pop_env();
         } else {
+            // flag records if any of the 'elseif' branch has been executed
             let mut flag = false;
             for (exp, block) in elseif_branches {
                 let cond = self.eval(&exp, line)?.compress();
@@ -437,6 +455,8 @@ impl Interpreter {
                 }
             }
 
+            // if none of the 'elseif' branches are executed, 
+            // exec 'else' branch
             if !flag {
                 if let Some(else_branch) = option_else_branch {
                     self.push_env(Environment::new(), line)?;
@@ -460,9 +480,11 @@ impl Interpreter {
             self.push_env(Environment::new(), line)?;
             match self.exec_block(&body) {
                 Ok(_) => {
+                    // re-eval the condition 
                     cond = self.eval(&condition, line)?.compress();
                     self.pop_env();
                 }
+                // catches the break statement 
                 Err(RuntimeException::Break { line: _ }) => {
                     self.pop_env();
                     break;
@@ -474,6 +496,7 @@ impl Interpreter {
         Ok(())
     }
 
+    /// evaluate the expressions and throws RuntimeException::RetResult
     fn exec_return(&mut self, explist: &ExpList, line: usize) -> Result<(), RuntimeException> {
         let mut values = Vec::new();
 
@@ -484,6 +507,7 @@ impl Interpreter {
         Err(RuntimeException::RetResult { values })
     }
 
+    /// evaluate the expression
     fn eval(&mut self, exp: &Exp, line: usize) -> Result<Value, RuntimeException> {
         match exp {
             Exp::Literal { value } => self.eval_literal(value),
@@ -525,6 +549,7 @@ impl Interpreter {
         right: &Exp,
         line: usize,
     ) -> Result<Value, RuntimeException> {
+        // first evaluate the right operand
         let right = self.eval(right, line)?.compress();
         match op.tok_type {
             TokenType::NOT => {
@@ -546,10 +571,12 @@ impl Interpreter {
                     }
                 }
             }
+            // get length operator
             TokenType::POUND => {
                 let r_ty = right.ty();
                 if let Value::Address { addr } = right {
                     if let Some(HeapObj::Table { table }) = self.dereference(&addr) {
+                        // returns the number of elements in the table
                         Ok(Value::Num {
                             value: OrderedFloat::from(table.len() as f64),
                         })
@@ -560,6 +587,7 @@ impl Interpreter {
                         ))
                     }
                 } else if let Value::Str { value } = right {
+                    // return the number of bytes in the string
                     Ok(Value::Num { value: OrderedFloat::from(value.len() as f64) })
                 } else {
                     Err(RuntimeException::new_error(
@@ -584,6 +612,7 @@ impl Interpreter {
         right: &Exp,
         line: usize,
     ) -> Result<Value, RuntimeException> {
+        // first evaluate the left expression
         let left = self.eval(left, line)?.compress();
 
         match op.tok_type {
@@ -746,6 +775,7 @@ impl Interpreter {
         }
     }
 
+    /// defines the function and return its address
     fn eval_func_exp(&mut self, funcbody: &FuncBody) -> Result<Value, RuntimeException> {
         let func = HeapObj::Function {
             parameters: funcbody.parlist.clone(),
@@ -756,6 +786,7 @@ impl Interpreter {
         Ok(Value::Address { addr })
     }
 
+    /// evaluate variables(Name and TableIndex)
     fn eval_var(&mut self, var: &Var, line: usize) -> Result<Value, RuntimeException> {
         match var {
             Var::Name { name } => match self.get(name) {
@@ -787,6 +818,7 @@ impl Interpreter {
         }
     }
 
+    /// returns a Value::ValueList
     fn eval_func_call(
         &mut self,
         prefixexp: &Exp,
@@ -807,33 +839,40 @@ impl Interpreter {
                 // in order to 'recall' those old on stack values
                 self.env_stack.append(&mut closure);
 
+                // the function body's own env
                 self.push_env(Environment::new(), line)?;
                 // define the local parameters
                 self.assign_local_namelist(&parameters, arguments, line)?;
 
                 let res = self.exec_block(&body);
 
+                // pop the body env
                 self.pop_env();
 
+                // pop the closure
                 while self.env_stack.len() > rec_n {
                     self.pop_env();
                 }
 
                 match res {
+                    // catches the returned values
                     Err(RuntimeException::RetResult { values }) => {
                         return Ok(Value::ValueList { values })
                     }
+                    // error occured when exec function's body
                     e => e?,
                 }
 
+                // no return statement, no error occured, return nil as default
                 Ok(Value::Nil)
             } else {
                 Err(RuntimeException::new_error(
                     line,
-                    format!("attempt to call a non-function value"),
+                    format!("attempt to call a table value"),
                 ))
             }
         } else if let Value::Print = func_name {
+            // call the default print function
             self.call_print(arguments, line)
         } else {
             // not a callable object
@@ -844,21 +883,24 @@ impl Interpreter {
         }
     }
 
+
+    /// evaluate a table constructor
     fn eval_table(
         &mut self,
         fieldlist: &FieldList,
         line: usize,
     ) -> Result<Value, RuntimeException> {
         let mut table = Table::new();
+        // field can be 'exp' or 'Name=exp'
+        // num_index used to record the number of 'exp's
         let mut num_index = 1.0;
 
+        // when the trailing field is a functioncall, expand its result
         for (i, field) in fieldlist.0.iter().enumerate() {
             if i+1 < fieldlist.0.len() {
                 // not the trailing field
-                let mut val = self.eval(&field.exp, line)?;
-                if let Value::ValueList { values } = val {
-                    val = values.get(0).unwrap_or(&Value::Nil).clone();
-                }
+                let val = self.eval(&field.exp, line)?.compress();
+              
                 match &field.name {
                     Some(name) => table.insert(
                         Value::Str {
@@ -878,7 +920,7 @@ impl Interpreter {
                 }
             } else {
                 // the last field in the fieldlist 
-                // check if the field evaluates tot valuelist
+                // check if the field evaluates to valuelist
                 // if true, expand it
                 let val = self.eval(&field.exp, line)?;
                 if let Value::ValueList { values } = val {
@@ -890,6 +932,7 @@ impl Interpreter {
                             values.get(0).unwrap_or(&Value::Nil).clone(),
                         ),
                         None => {
+                            // the last field is 'exp' and is a function call
                             for value in values {
                                 table.insert(
                                     Value::Num {
@@ -902,6 +945,7 @@ impl Interpreter {
                         }
                     }
                 } else {
+                    // not a functioncall
                     match &field.name {
                         Some(name) => table.insert(
                             Value::Str {

@@ -16,7 +16,7 @@ pub enum Value {
 
     Address { addr: Address },
 
-    // value list
+    // value list, only used to store function's return values
     ValueList { values: Vec<Value> },
 
     // Builtin Functions
@@ -26,6 +26,7 @@ pub enum Value {
 impl Eq for Value {}
 
 impl Value {
+    /// return false iff value is nil or false
     pub fn truthy(&self) -> bool {
         match self {
             Self::Bool { b } => *b,
@@ -34,7 +35,7 @@ impl Value {
         }
     }
 
-    /// returns the type of the value
+    /// returns the type of the value in string format
     pub fn ty(&self) -> String {
         match self {
             // err: attempt to add(or sth) 'xxx' with 'xxx'
@@ -74,6 +75,9 @@ impl Value {
         }
     }
 
+    /// try to convert value to a string
+    /// 
+    /// return Some(s) upon success
     pub fn string(&self) -> Option<String> {
         match self {
             Self::Num { value } => Some(value.to_string()),
@@ -82,6 +86,8 @@ impl Value {
         }
     }
 
+    /// if value is a ValueList(function's return values), 
+    /// get its first value
     pub fn compress(self) -> Value {
         match self {
             Value::ValueList { values } => {
@@ -95,6 +101,8 @@ impl Value {
         }
     }
 
+    /// if value is a ValueList, 
+    /// expand it to a Vec<Value>
     pub fn expand(self) -> Vec<Value> {
         match self {
             Value::ValueList { values } => values,
@@ -127,6 +135,7 @@ impl fmt::Display for Value {
     }
 }
 
+/// the inner structure of HeapObj::Table
 #[derive(Clone)]
 pub struct Table {
     map: HashMap<Value, Value>,
@@ -139,6 +148,7 @@ impl Table {
         }
     }
 
+    /// get the value inside table
     pub fn index(&self, i: &Value) -> Value {
         match self.map.get(i) {
             Some(v) => v.clone(),
@@ -146,6 +156,7 @@ impl Table {
         }
     }
 
+    /// update the table
     pub fn insert(&mut self, key: Value, val: Value) {
         if let Value::Nil = val {
             self.map.remove(&key);
@@ -154,6 +165,7 @@ impl Table {
         }
     }
 
+    /// get table's number of (key, value) pairs
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -168,6 +180,7 @@ impl IntoIterator for Table {
     }
 }
 
+/// represent functions and tables
 #[derive(Clone)]
 pub enum HeapObj {
     Function {
@@ -181,6 +194,7 @@ pub enum HeapObj {
 }
 
 impl HeapObj {
+    /// return the type in string format
     pub fn ty(&self) -> String {
         match self {
             Self::Function {

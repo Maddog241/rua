@@ -42,6 +42,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// convert source to a vec of tokens
     pub fn lex(&mut self) -> Result<Vec<Token>, LexError> {
         let mut tokens: Vec<Token> = Vec::new();
 
@@ -94,7 +95,7 @@ impl<'a> Lexer<'a> {
                             if let Err(e) = res {
                                 return Err(e);
                             } else {
-                                // do nothing
+                                // successfully ignored the comment, do nothing
                             }
                         }
                         None => {
@@ -189,6 +190,7 @@ impl<'a> Lexer<'a> {
                     Ok(tok) => tokens.push(tok),
                     Err(e) => return Err(e),
                 },
+                // ignore the spaces
                 b' ' | b'\r' | b'\t' => {
                     self.advance(1);
                 }
@@ -197,6 +199,7 @@ impl<'a> Lexer<'a> {
                     self.advance(1);
                 }
 
+                // number, identifier(name) or keyword
                 _ => {
                     if Self::is_digit(self.source[self.current]) {
                         // lex a number
@@ -214,8 +217,6 @@ impl<'a> Lexer<'a> {
                     }
                 }
             }
-
-            // move the pointer forward
         }
 
         tokens.push(Token::new(self.line, TokenType::EOF));
@@ -227,12 +228,13 @@ impl<'a> Lexer<'a> {
         self.current += step;
     }
 
+    /// check if we are in the end state 
     fn at_end(&self) -> bool {
         self.current >= self.source.len()
     }
 
+    /// return self.source[self.current+1] if it exists
     fn look_ahead(&self) -> Option<u8> {
-        // return self.source[self.current+1] if it exists
         if self.current + 1 >= self.source.len() {
             None
         } else {
@@ -240,11 +242,17 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// lex a short string
+    /// 
+    /// `quote`: `'` or `"`, which indicates whether the string 
+    /// should end with a double quotation or single quotation
     fn lex_line_string(&mut self, quote: u8) -> Result<Token, LexError> {
         if quote != b'\'' && quote != b'"' {
+            // never branch here
             panic!("invalid quote argument");
         }
 
+        // mark the start of the string
         let start = self.current;
 
         self.advance(1);
@@ -262,6 +270,7 @@ impl<'a> Lexer<'a> {
                 self.advance(1);
                 break;
             } else if c == b'\\' {
+                // match escape characters
                 match self.look_ahead() {
                     Some(b'n') => {
                         self.source.remove(self.current);
@@ -329,6 +338,8 @@ impl<'a> Lexer<'a> {
                     ));
                 }
             } else {
+                // the line number may increase inside long string
+                // so udpate it here
                 if self.source[self.current] == b'\n' {
                     self.line += 1;
                 }
@@ -343,8 +354,9 @@ impl<'a> Lexer<'a> {
         ))
     }
 
-    // returns None if this is not a long comment. Otherwise, returns Some(res).
-    // res == Err(LexError) if it is not closed. Otherwise, res == ().
+    /// returns `None` if this is not a long comment. Otherwise, returns `Some(res)`.
+    /// 
+    /// `res == Err(LexError)` if it is not closed. Otherwise, `res == ()`.
     fn lex_long_comment(&mut self) -> Option<Result<(), LexError>> {
         // check if the start of comment: --[[
         if self.current + 3 >= self.source.len() {
@@ -357,13 +369,13 @@ impl<'a> Lexer<'a> {
         } else {
             self.advance(4);
         }
-        // this is a comment
+        // this is a long comment
         let mut closed = false;
         let start = self.current;
 
         while !self.at_end() {
             if self.source[self.current] == b']' {
-                // check end of string
+                // check end of string: ]]
                 if let Some(b']') = self.look_ahead() {
                     self.advance(2);
                     closed = true;
@@ -389,6 +401,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// check if we are encoutering a line comment 
+    /// 
+    /// if true, eat up the line comment and return true
+    /// 
+    /// otherwise, return false and leave the state unchanged.
     fn lex_line_comment(&mut self) -> bool {
         // check the start of the comment
         if self.current + 1 >= self.source.len() {
@@ -417,8 +434,8 @@ impl<'a> Lexer<'a> {
         b'0' <= c && c <= b'9'
     }
 
+    /// number ::= (digit+) | (digit+ '.' digit+)
     fn lex_number(&mut self) -> Result<Token, LexError> {
-        // pay attention to overflow
         let start = self.current;
 
         while !self.at_end() && Self::is_digit(self.source[self.current]) {
@@ -426,7 +443,7 @@ impl<'a> Lexer<'a> {
         }
 
         if !self.at_end() && self.source[self.current] == b'.' {
-            // the byte after b'.' is a digit
+            // the byte after b'.' should be a digit
             if let Some(c) = self.look_ahead() {
                 if Self::is_digit(c) {
                     self.advance(1);
@@ -460,6 +477,7 @@ impl<'a> Lexer<'a> {
 
         let lexeme = String::from_utf8(self.source[start..self.current].to_vec()).unwrap();
 
+        // decide if the lexeme is a keyword or not 
         match self.keywords.get(lexeme.as_str()) {
             Some(keyword) => Ok(Token::new(self.line, keyword.clone())),
             None => Ok(Token::new(self.line, TokenType::NAME { value: lexeme })),
