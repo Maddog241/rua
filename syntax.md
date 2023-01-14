@@ -1,6 +1,6 @@
 ### Lua Subset Grammar
 
-```lua
+```
 block ::= {stmt} [retstat]
 stmt ::= ';' |
         varlist '=' explist |
@@ -35,7 +35,7 @@ binop ::= '+' | '-' | '*' | '/' | '//' | '^' | '%' | '..' |
 unop ::= '-' | not  | #
 ```
 
-Eliminate left recursions and get the following production rules
+Eliminate left recursions and get the following productions and utility rules. 
 
 ### Productions
 
