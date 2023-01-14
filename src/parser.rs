@@ -788,10 +788,20 @@ impl Parser {
         Ok(Exp::TableConstructor { fieldlist })
     }
 
+    /// fieldlist -> field (fieldsep field)* (fieldsep)?
+    /// 
+    /// field -> '[' exp ']' | Name '=' exp | exp 
+    /// 
+    /// fieldsep -> ',' | 
+    /// 
+    ///             ';'
     fn parse_fieldlist(&mut self) -> Result<FieldList, ParseError> {
         let mut fields = vec![self.parse_field()?];
         while let COMMA | SEMICOLON = self.peek().tok_type {
             self.advance();
+            if let RIGHTBRACE = self.peek().tok_type {
+                break;
+            }
             fields.push(self.parse_field()?);
         }
 

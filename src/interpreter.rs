@@ -560,6 +560,8 @@ impl Interpreter {
                             format!("attempt to get length of a function value"),
                         ))
                     }
+                } else if let Value::Str { value } = right {
+                    Ok(Value::Num { value: OrderedFloat::from(value.len() as f64) })
                 } else {
                     Err(RuntimeException::new_error(
                         line,
@@ -851,22 +853,73 @@ impl Interpreter {
         let mut table = Table::new();
         let mut num_index = 1.0;
 
-        for field in fieldlist.0.iter() {
-            match &field.name {
-                Some(name) => table.insert(
-                    Value::Str {
-                        value: name.clone(),
-                    },
-                    self.eval(&field.exp, line)?,
-                ),
-                None => {
-                    table.insert(
-                        Value::Num {
-                            value: OrderedFloat::from(num_index),
+        for (i, field) in fieldlist.0.iter().enumerate() {
+            if i+1 < fieldlist.0.len() {
+                // not the trailing field
+                let mut val = self.eval(&field.exp, line)?;
+                if let Value::ValueList { values } = val {
+                    val = values.get(0).unwrap_or(&Value::Nil).clone();
+                }
+                match &field.name {
+                    Some(name) => table.insert(
+                        Value::Str {
+                            value: name.clone(),
                         },
-                        self.eval(&field.exp, line)?,
-                    );
-                    num_index += 1.0;
+                        val,
+                    ),
+                    None => {
+                        table.insert(
+                            Value::Num {
+                                value: OrderedFloat::from(num_index),
+                            },
+                            val,
+                        );
+                        num_index += 1.0;
+                    }
+                }
+            } else {
+                // the last field in the fieldlist 
+                // check if the field evaluates tot valuelist
+                // if true, expand it
+                let val = self.eval(&field.exp, line)?;
+                if let Value::ValueList { values } = val {
+                     match &field.name {
+                        Some(name) => table.insert(
+                            Value::Str {
+                                value: name.clone(),
+                            },
+                            values.get(0).unwrap_or(&Value::Nil).clone(),
+                        ),
+                        None => {
+                            for value in values {
+                                table.insert(
+                                    Value::Num {
+                                        value: OrderedFloat::from(num_index),
+                                    },
+                                    value
+                                );
+                                num_index += 1.0;
+                            }
+                        }
+                    }
+                } else {
+                    match &field.name {
+                        Some(name) => table.insert(
+                            Value::Str {
+                                value: name.clone(),
+                            },
+                            val,
+                        ),
+                        None => {
+                            table.insert(
+                                Value::Num {
+                                    value: OrderedFloat::from(num_index),
+                                },
+                                val,
+                            );
+                            num_index += 1.0;
+                        }
+                    }
                 }
             }
         }

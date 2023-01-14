@@ -1,20 +1,13 @@
 --- 
-do 
-    local a = 'hello'
-    function fun()
-        print(a)
-    end
-    fun()
-end
-fun()
----
-a = "hello"
-do 
-    function fun() 
-        print(a)
+function foo()
+    local a = 100
+    function goo()
+        return a
     end
 
-    fun()
-    a = "world"
-    fun()
+    return goo
 end
+
+a = 200
+print(foo()()) -- 100
+print(a)   -- 200

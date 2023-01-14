@@ -147,7 +147,11 @@ impl Table {
     }
 
     pub fn insert(&mut self, key: Value, val: Value) {
-        self.map.insert(key, val);
+        if let Value::Nil = val {
+            self.map.remove(&key);
+        } else {
+            self.map.insert(key, val);
+        }
     }
 
     pub fn len(&self) -> usize {
