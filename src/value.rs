@@ -53,14 +53,14 @@ impl Value {
     /// try to convert itself to a number value
     ///
     /// return `None` upon fail
-    pub fn to_number(&self) -> Option<OrderedFloat<f64>> {
+    pub fn number(&self) -> Option<OrderedFloat<f64>> {
         match self {
             Self::Num { value } => Some(value.clone()),
             Self::Str { value } => {
                 // since f64::parse() is too powerful,
                 // we kick off some functionality here
                 // to avoid seeing "inf" or "nan" as valid numbers
-                if value.contains("inf") || value.contains("nan") {
+                if value.contains("inf") || value.contains("nan") || value.contains("e") {
                     return None;
                 }
 
@@ -70,6 +70,14 @@ impl Value {
                     None
                 }
             }
+            _ => None,
+        }
+    }
+
+    pub fn string(&self) -> Option<String> {
+        match self {
+            Self::Num { value } => Some(value.to_string()),
+            Self::Str { value } => Some(value.clone()),
             _ => None,
         }
     }

@@ -227,16 +227,25 @@ impl Interpreter {
                 values.append(&mut self.eval(arg, line)?.expand())
             }
         }
+        
+        // evaluate expressions on the left hand side
+        let mut pres_keys = vec![(Value::Nil, Value::Nil); left.vars.len()];
+        for i in 0..left.vars.len() {
+            if let Var::TableIndex { prefixexp, exp } = &left.vars[i] {
+                pres_keys[i].0 = self.eval(prefixexp, line)?;
+                pres_keys[i].1 = self.eval(exp, line)?;
+            }
+        }
 
         for i in 0..left.vars.len() {
             match &left.vars[i] {
                 Var::Name { name } => {
                     self.define_global(name, values.get(i).unwrap_or(&Value::Nil).clone())
                 }
-                Var::TableIndex { prefixexp, exp } => {
-                    let res = self.eval(&prefixexp, line)?;
+                Var::TableIndex { prefixexp: _, exp: _ } => {
+                    let res = pres_keys[i].0.clone();
                     if let Value::Address { addr } = res {
-                        let key = self.eval(exp, line)?;
+                        let key = pres_keys[i].1.clone();
                         self.assign_table(&addr, key, values[i].clone(), line)?;
                     } else {
                         return Err(RuntimeException::new_error(
@@ -528,7 +537,7 @@ impl Interpreter {
                     Ok(Value::Num { value: -value })
                 } else {
                     // if value can be converted to numbers, this will be valid
-                    if let Some(val) = right.to_number() {
+                    if let Some(val) = right.number() {
                         Ok(Value::Num { value: -val })
                     } else {
                         Err(RuntimeException::new_error(
@@ -580,7 +589,7 @@ impl Interpreter {
             TokenType::PLUS => {
                 //  if the operand is a string and can be converted to num, then it will be valid
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a + b }),
                     _ => Err(RuntimeException::new_error(
                         op.line,
@@ -591,7 +600,7 @@ impl Interpreter {
 
             TokenType::MINUS => {
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a - b }),
                     _ => Err(RuntimeException::new_error(
                         op.line,
@@ -602,7 +611,7 @@ impl Interpreter {
 
             TokenType::MUL => {
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a * b }),
                     _ => Err(RuntimeException::new_error(
                         op.line,
@@ -613,7 +622,7 @@ impl Interpreter {
 
             TokenType::DIV => {
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a / b }),
                     _ => Err(RuntimeException::new_error(
                         op.line,
@@ -624,7 +633,7 @@ impl Interpreter {
 
             TokenType::FLOORDIV => {
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num {
                         value: OrderedFloat::from((a / b).floor()),
                     }),
@@ -637,7 +646,7 @@ impl Interpreter {
 
             TokenType::MOD => {
                 let right = self.eval(right, line)?;
-                match (left.to_number(), right.to_number()) {
+                match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num {
                         value: OrderedFloat::from(a % b),
                     }),
@@ -648,11 +657,32 @@ impl Interpreter {
                 }
             }
 
+            TokenType::POW => {
+                let right = self.eval(right, line)?;
+                match left {
+                    Value::Num { value: base } => {
+                        match right {
+                            Value::Num { value: power } => {
+                                Ok(Value::Num { value: OrderedFloat::from(base.powf(power.into_inner())) })
+                            },
+                            _ => Err(RuntimeException::new_error(
+                                    op.line,
+                                    format!("attempt to perform arithmetic on {} value", right.ty()),
+                                )),
+                        }
+                    },
+                    _ => Err(RuntimeException::new_error(
+                        op.line,
+                        format!("attempt to perform arithmetic on {} value", left.ty()),
+                    )),
+                }
+            }
+
             TokenType::DOTDOT => {
                 let right = self.eval(right, line)?;
                 let (l_ty, r_ty) = (left.ty(), right.ty());
-                match (left, right) {
-                    (Value::Str { value: mut a }, Value::Str { value: b }) => {
+                match (left.string(), right.string()) {
+                    (Some(mut a), Some(b)) => {
                         a.push_str(&b);
                         Ok(Value::Str { value: a })
                     }
