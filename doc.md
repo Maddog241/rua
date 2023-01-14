@@ -4,7 +4,7 @@
 
 ### keywords
 
-```
+```lua
 and break do else elseif 
 end false for function if 
 in  local nil not or 
@@ -15,13 +15,13 @@ return then true while
 
 #### short string
 
-Short strings can be delimited by matching single or duobel quotes, and can containg the following escape sequences: `\n, \t, \\, \', \"`.
+Short strings can be delimited by matching single or double quotes, and can contain the following escape sequences: `\n, \t, \\, \', \"`.
 
 #### long string
 
-Literal strings can also be defined using a long format enclosed by double brackets: `[[<string-literal>]]`. However, it does not interpret any escape sequences. 
+Literal strings can also be defined using a long format enclosed by double brackets: `[[<contents>]]`. However, it does not interpret any escape sequences. 
 
-For convenience, when the opening double bracket is immediately followed by a newline, the newline is not included in the string. So the following two strings are equal: 
+For convenience, when the opening double bracket is immediately followed by a newline, the newline is not included in the string. So the following strings are equal: 
 
 ```lua
 a = 'alo\n123"'
@@ -36,6 +36,8 @@ alo
 
 a numeric constant can be written with an optional fractional part. So both `333` and `333.33` are valid numbers.
 
+The lexical rule is `number -> (digit+) | (digit+ '.' digit+)`. 
+
 ### comments
 
 A comment starts with a double hyphen (--) anywhere outside a string. If  the text immediately after `--` is not an opening double bracket, the comment is a *short comment*, which runs until the end of the line. Otherwise, it is a *long comment*, which runs until the corresponding closing double bracket. 
@@ -44,7 +46,7 @@ A comment starts with a double hyphen (--) anywhere outside a string. If  the te
 
 Variables are places that store values. There are three kinds of variables in Lua: global variables, local variables, and table fields.
 
-A single name can denote a global variable or a local variable (or a function's formal parameter, which is a particular kind of local variable):
+A single name can denote a global variable or a local variable:
 
     var ::= Name
 
@@ -68,7 +70,7 @@ A block is a list of statements, which are executed sequentially:
 
     block ::= {stat}
 
-Lua has *empty statements* that allow you to separate statements with semicolons, start a block with a semicolon or write two semicolons in sequence:
+Lua has *empty statements* that allow you to separate statements with semicolons:
 
     stat ::= ';'
 
@@ -164,7 +166,7 @@ for k in pairs(a) do
 end
 ```
 
-may print `2 3 1` or something else.
+may print `2 3 1` or something else. This is due to the rust implementation uses a `HashMap` to store the (key, value) pairs, in which the order of keys are not guaranteed.
 
 ### function calls as statements
 
@@ -248,7 +250,7 @@ If both operands are strings or numbers, then they are converted to strings
 a = "hello, "
 b = "world"
 print(a..b) -- "hello, world"
-c = "2023"
+c = 2023
 print(a..c) -- "hello, 2023"
 ```
 
@@ -256,9 +258,9 @@ print(a..c) -- "hello, 2023"
 
 `#` can be applied on *string* and *table*. 
 
-for string, it will get its number of bytes. 
+For string, it will get its number of bytes. 
 
-for table, it will get its number of elements. 
+For table, it will get its number of (key, value) pairs.
 
 ### precedence
 
@@ -270,7 +272,7 @@ Operator precedence in Lua follows the table below, from lower to higher priorit
      ..
      +     -
      *     /     //    %
-     unary operators (not   #     -)
+     unary operators (not   #    -)
      ^
 
 parentheses `()` can be used to change the precedences of an expression. 
@@ -309,7 +311,7 @@ A function call in Lua has the following syntax:
 
 Arguments have the following syntax:
 
-    args ::= ‘**(**’ [explist] ‘**)**’
+    args ::= '(' [explist] ')'
     args ::= tableconstructor
     args ::= LiteralString
 
@@ -320,7 +322,7 @@ function foo(s)
     print(s)
 end
 foo"hello, world" -- hello, world
-foo[[hello, 2023] -- hello, 2023
+foo[[hello, 2023]] -- hello, 2023
 foo'hello, pl' -- hello, pl
 
 function goo(t)
@@ -353,7 +355,7 @@ is equal to
 f = function () body end
 ```
 
-A function definition is an executable expression, when Lua executes the function definition, the function will take a snapshot of the stack and stores that information into its 'closure' field. In the body of the function, the closure will be accessed first when its trying to reference a variable. 
+A function definition is an executable expression, when Lua executes the function definition, the function will take a snapshot of the stack and stores that information into its 'closure' field. When the function is executed, the closure will be accessed first when its trying to reference a variable inside the function body.
 
 For example, 
 

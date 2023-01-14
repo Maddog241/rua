@@ -689,10 +689,10 @@ impl Interpreter {
 
             TokenType::POW => {
                 let right = self.eval(right, line)?.compress();
-                match left {
-                    Value::Num { value: base } => {
-                        match right {
-                            Value::Num { value: power } => {
+                match left.number() {
+                    Some(base) => {
+                        match right.number() {
+                            Some(power) => {
                                 Ok(Value::Num { value: OrderedFloat::from(base.powf(power.into_inner())) })
                             },
                             _ => Err(RuntimeException::new_error(

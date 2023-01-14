@@ -28,3 +28,5 @@ For example, enter `cargo run ./tests/assignment.lua` and get the following outp
 4       20      4
 20      30      10
 ```
+
+The code is only tested on windows. It might also work on linux.
