@@ -6,14 +6,14 @@ use crate::{
 };
 
 pub struct Lexer<'a> {
-    source: &'a Vec<u8>,
+    source: &'a mut Vec<u8>,
     current: usize,
     line: usize,
     keywords: HashMap<&'static str, TokenType>,
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a Vec<u8>) -> Self {
+    pub fn new(source: &'a mut Vec<u8>) -> Self {
         Self {
             source,
             current: 0,
@@ -186,7 +186,6 @@ impl<'a> Lexer<'a> {
                 }
                 // string
                 b'\'' | b'"' => {
-                    // 这个需要考虑到是单引号字符串还是双引号字符串
                     match self.lex_line_string(self.source[self.current]) {
                         Ok(tok) => tokens.push(tok),
                         Err(e) => return Err(e),
@@ -264,6 +263,35 @@ impl<'a> Lexer<'a> {
                 // end of the string
                 self.advance(1);
                 break;
+            } else if c == b'\\' {
+                match self.look_ahead() {
+                    Some(b'n') => {
+                        self.source[self.current] = b'\n';
+                        self.source[self.current+1] = b'\0';
+                        self.advance(2);
+                    },
+                    Some(b't') => {
+                        self.source[self.current] = b'\t';
+                        self.source[self.current+1] = b'\0';
+                        self.advance(2);
+                    }
+                    Some(b'\\') => {
+                        self.source[self.current] = b'\\';
+                        self.source[self.current+1] = b'\0';
+                        self.advance(2);
+                    },
+                    Some(b'\'') => {
+                        self.source[self.current] = b'\'';
+                        self.source[self.current+1] = b'\0';
+                        self.advance(2);
+                    },
+                    Some(b'"') => {
+                        self.source[self.current] = b'"';
+                        self.source[self.current+1] = b'\0';
+                        self.advance(2);
+                    },
+                    _ => self.advance(1),
+                }
             } else {
                 self.advance(1);
             }
@@ -281,19 +309,7 @@ impl<'a> Lexer<'a> {
     fn lex_long_string(&mut self) -> Result<Token, LexError> {
         let start = self.current;
         while !self.at_end() {
-            if self.source[self.current] == b'\\' {
-                // escape characters
-                if let Some(b'\\') | Some(b'n') | Some(b't') | Some(b'\'') | Some(b'\"')
-                | Some(b']') = self.look_ahead()
-                {
-                    self.advance(2);
-                } else {
-                    return Err(LexError::new(
-                        self.line,
-                        String::from("invalid escape character"),
-                    ));
-                }
-            } else if self.source[self.current] == b']' {
+            if self.source[self.current] == b']' {
                 // check end of string
                 if let Some(b']') = self.look_ahead() {
                     self.advance(2);

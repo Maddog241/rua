@@ -4,7 +4,7 @@ use crate::{
     ast::Block,
     lexer::{LexError, Lexer},
     parser::{ParseError, Parser},
-    token::Token,
+    token::Token, interpreter::{RuntimeException, Interpreter},
 };
 
 pub struct Rua {
@@ -27,8 +27,8 @@ impl Rua {
         }
     }
 
-    pub fn lex(&self) -> Result<Vec<Token>, LexError> {
-        let mut lexer = Lexer::new(&self.source);
+    pub fn lex(&mut self) -> Result<Vec<Token>, LexError> {
+        let mut lexer = Lexer::new(&mut self.source);
 
         lexer.lex()
     }
@@ -36,6 +36,12 @@ impl Rua {
     pub fn parse(&self, tokens: Vec<Token>) -> Result<Block, ParseError> {
         let mut parser = Parser::new(tokens);
         parser.parse()
+    }
+
+    pub fn interpret(&self, block: Block) -> Result<(), RuntimeException> {
+        let mut interpreter = Interpreter::new();
+
+        interpreter.exec_block(&block)
     }
 }
 

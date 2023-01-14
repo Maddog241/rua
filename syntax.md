@@ -47,7 +47,7 @@ stmt -> ';' |
         break |
         do block end |
         while exp do block end |
-        if exp then block (else if exp then block)* (else block)? end |
+        if exp then block (elseif exp then block)* (else block)? end |
         for Name '=' exp ',' exp (',' exp)? do block end |
         for namelist in pairs(table) do block end | 
         function Name funcbody |
@@ -99,18 +99,3 @@ args    -> '(' (explist)? ')' |
             String
 ```
 
-var -> Name |
-        prefixexp '[' exp ']' |
-        prefixexp '.' Name
-
-functioncall -> prefixexp args
-
-prefixexp -> var |
-             functioncall | 
-             '(' exp ')' 
-        
-prefixexp -> Name |
-             prefixexp '[' exp ']' |
-             prefixexp '.' Name |
-             prefixexp args |
-             '(' exp ')'

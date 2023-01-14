@@ -9,7 +9,6 @@ mod value;
 
 use std::{env, process::exit};
 
-use interpreter::Interpreter;
 use rua::{Rua, RuaError};
 
 fn main() {
@@ -19,14 +18,13 @@ fn main() {
         exit(1);
     }
 
-    let program = Rua::new(&args[1]);
+    let mut program = Rua::new(&args[1]);
 
     match program.lex() {
         Ok(tokens) => match program.parse(tokens) {
             Ok(block) => {
-                let mut interpreter = Interpreter::new();
-                match interpreter.exec_block(&block) {
-                    Ok(()) => {}
+                match program.interpret(block) {
+                    Ok(()) => {},
                     Err(e) => e.report(&args[1]),
                 }
             }

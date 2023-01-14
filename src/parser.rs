@@ -24,12 +24,6 @@ macro_rules! consume {
     }};
 }
 
-pub struct Parser {
-    tokens: Vec<Token>,
-    current: usize,
-    line: usize,
-}
-
 pub struct ParseError {
     line: usize,
     message: String,
@@ -46,6 +40,13 @@ impl RuaError for ParseError {
         eprintln!("rua: {}:{}: {}", filename, self.line, self.message);
     }
 }
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    current: usize,
+    line: usize,
+}
+
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -178,6 +179,8 @@ impl Parser {
             }
         }
 
+        // According to lua5.3 reference guide
+        // The return statement can only be written as the last statement of a block
         if let RETURN = self.peek().tok_type {
             statements.push(self.parse_return()?);
         }

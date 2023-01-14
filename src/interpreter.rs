@@ -63,7 +63,7 @@ impl Interpreter {
     /// value must be a function or a table
     fn alloc(&mut self, obj: HeapObj) -> Address {
         let old_addr = self.cur_addr;
-        self.cur_addr += 128; // 128 is just for fun
+        self.cur_addr += 128; // 128 is just for fun, cause it's not the real memory layout :)
         self.addr_space.insert(Address::new(old_addr), obj);
 
         Address::new(old_addr)
@@ -771,6 +771,9 @@ impl Interpreter {
             }) = self.dereference(&addr)
             {
                 let rec_n = self.env_stack.len();
+                
+                // push the environment when the closure was defined onto the stack
+                // in order to 'recall' those old on stack values
                 self.env_stack.append(&mut closure);
 
                 self.push_env(Environment::new(), line)?;
