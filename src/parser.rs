@@ -527,7 +527,7 @@ impl Parser {
         let mut left = self.parse_primary()?;
         while self.peek_power() {
             let operator = self.advance();
-            let right = self.parse_literal()?;
+            let right = self.parse_primary()?;
             left = Exp::Binary {
                 left: Box::new(left),
                 operator,

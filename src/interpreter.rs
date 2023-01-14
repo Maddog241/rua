@@ -18,10 +18,8 @@ pub struct Interpreter {
 
 impl Interpreter {
     fn push_env(&mut self, env: Environment, line: usize) -> Result<(), RuntimeException> {
-        // eprintln!("push stack");
         self.env_stack.push(env);
         if self.env_stack.len() >= 1000 {
-            // not the exact line
             Err(RuntimeException::new_error(
                 line,
                 format!("exceeds the maximum recursion depths"),
@@ -33,7 +31,6 @@ impl Interpreter {
 
     fn pop_env(&mut self) {
         self.env_stack.pop().unwrap();
-        // eprintln!("pop stack, stack size: {}", self.env_stack.len());
     }
 
     fn define_local(&mut self, name: &Name, value: Value) {

@@ -2,17 +2,6 @@ use std::fmt;
 
 use crate::token::Token;
 
-// // chunk
-// pub struct Chunk {
-//     pub block: Block,
-// }
-
-// impl fmt::Display for Chunk {
-//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//         write!(f, "{}", self.block)
-//     }
-// }
-
 // block
 #[derive(Clone)]
 pub struct Block {
