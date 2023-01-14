@@ -1,12 +1,12 @@
-function add(a, b)
-    return a + b
-end
-
 function foo()
-    return 1, 2
+    return 1, 2, 3
 end
 
-print(add(foo()))
+function add(a, b, c)
+    return a + b + c
+end
+
+print(add(foo())) -- 6
 
 function foo(s)
     print(s)
