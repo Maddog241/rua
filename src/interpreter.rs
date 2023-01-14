@@ -232,8 +232,8 @@ impl Interpreter {
         let mut pres_keys = vec![(Value::Nil, Value::Nil); left.vars.len()];
         for i in 0..left.vars.len() {
             if let Var::TableIndex { prefixexp, exp } = &left.vars[i] {
-                pres_keys[i].0 = self.eval(prefixexp, line)?;
-                pres_keys[i].1 = self.eval(exp, line)?;
+                pres_keys[i].0 = self.eval(prefixexp, line)?.compress();
+                pres_keys[i].1 = self.eval(exp, line)?.compress();
             }
         }
 
@@ -300,7 +300,9 @@ impl Interpreter {
         body: &Block,
         line: usize,
     ) -> Result<(), RuntimeException> {
-        match self.eval(table, line)? {
+        let res = self.eval(table, line)?;
+        let res_ty = res.ty();
+        match res.compress() {
             Value::Address { addr } => {
                 let table = self.dereference(&addr).unwrap();
                 if let HeapObj::Table { table } = table {
@@ -329,13 +331,13 @@ impl Interpreter {
                 } else {
                     Err(RuntimeException::new_error(
                         line,
-                        format!("bad argument to 'pairs' (table expected, got ())"),
+                        format!("bad argument to 'pairs' (table expected, got function)"),
                     ))
                 }
-            }
+            },
             _ => Err(RuntimeException::new_error(
                 line,
-                format!("bad argument to 'pairs' (table expected, got ())"),
+                format!("bad argument to 'pairs' (table expected, got {})", res_ty),
             )),
         }
     }
@@ -366,7 +368,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeException> {
         // defines the loop variable
         self.push_env(Environment::new(), line)?;
-        let start_val = self.eval(start, line)?;
+        let start_val = self.eval(start, line)?.compress();
         self.define_local(name, start_val);
 
         // generate condition expression and update statement
@@ -420,7 +422,7 @@ impl Interpreter {
         option_else_branch: &Option<Block>,
         line: usize,
     ) -> Result<(), RuntimeException> {
-        let cond = self.eval(&condition, line)?;
+        let cond = self.eval(&condition, line)?.compress();
         if cond.truthy() {
             self.push_env(Environment::new(), line)?;
             self.exec_block(then_branch)?;
@@ -428,7 +430,7 @@ impl Interpreter {
         } else {
             let mut flag = false;
             for (exp, block) in elseif_branches {
-                let cond = self.eval(&exp, line)?;
+                let cond = self.eval(&exp, line)?.compress();
                 if cond.truthy() {
                     self.push_env(Environment::new(), line)?;
                     self.exec_block(block)?;
@@ -456,12 +458,12 @@ impl Interpreter {
         body: &Block,
         line: usize,
     ) -> Result<(), RuntimeException> {
-        let mut cond = self.eval(&condition, line)?;
+        let mut cond = self.eval(&condition, line)?.compress();
         while cond.truthy() {
             self.push_env(Environment::new(), line)?;
             match self.exec_block(&body) {
                 Ok(_) => {
-                    cond = self.eval(&condition, line)?;
+                    cond = self.eval(&condition, line)?.compress();
                     self.pop_env();
                 }
                 Err(RuntimeException::Break { line: _ }) => {
@@ -479,7 +481,7 @@ impl Interpreter {
         let mut values = Vec::new();
 
         for exp in explist.0.iter() {
-            values.push(self.eval(exp, line)?);
+            values.push(self.eval(exp, line)?.compress());
         }
 
         Err(RuntimeException::RetResult { values })
@@ -526,7 +528,7 @@ impl Interpreter {
         right: &Exp,
         line: usize,
     ) -> Result<Value, RuntimeException> {
-        let right = self.eval(right, line)?;
+        let right = self.eval(right, line)?.compress();
         match op.tok_type {
             TokenType::NOT => {
                 // all values except for 'nil' and 'false' are considered true
@@ -585,12 +587,12 @@ impl Interpreter {
         right: &Exp,
         line: usize,
     ) -> Result<Value, RuntimeException> {
-        let left = self.eval(left, line)?;
+        let left = self.eval(left, line)?.compress();
 
         match op.tok_type {
             TokenType::PLUS => {
                 //  if the operand is a string and can be converted to num, then it will be valid
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a + b }),
                     _ => Err(RuntimeException::new_error(
@@ -601,7 +603,7 @@ impl Interpreter {
             }
 
             TokenType::MINUS => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a - b }),
                     _ => Err(RuntimeException::new_error(
@@ -612,7 +614,7 @@ impl Interpreter {
             }
 
             TokenType::MUL => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a * b }),
                     _ => Err(RuntimeException::new_error(
@@ -623,7 +625,7 @@ impl Interpreter {
             }
 
             TokenType::DIV => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num { value: a / b }),
                     _ => Err(RuntimeException::new_error(
@@ -634,7 +636,7 @@ impl Interpreter {
             }
 
             TokenType::FLOORDIV => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num {
                         value: OrderedFloat::from((a / b).floor()),
@@ -647,7 +649,7 @@ impl Interpreter {
             }
 
             TokenType::MOD => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match (left.number(), right.number()) {
                     (Some(a), Some(b)) => Ok(Value::Num {
                         value: OrderedFloat::from(a % b),
@@ -660,7 +662,7 @@ impl Interpreter {
             }
 
             TokenType::POW => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 match left {
                     Value::Num { value: base } => {
                         match right {
@@ -681,7 +683,7 @@ impl Interpreter {
             }
 
             TokenType::DOTDOT => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 let (l_ty, r_ty) = (left.ty(), right.ty());
                 match (left.string(), right.string()) {
                     (Some(mut a), Some(b)) => {
@@ -696,34 +698,34 @@ impl Interpreter {
             }
 
             TokenType::LESS => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 self.less(&left, &right, op.line)
             }
 
             TokenType::LESSEQUAL => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 self.less_equal(&left, &right, op.line)
             }
 
             TokenType::GREATER => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 self.greater(&left, &right, op.line)
             }
 
             TokenType::GREATEREQUAL => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 self.greater_equal(&left, &right, op.line)
             }
 
             TokenType::EQUALEQUAL => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 Ok(Value::Bool {
                     b: self.equal(&left, &right),
                 })
             }
 
             TokenType::NOTEQUAL => {
-                let right = self.eval(right, line)?;
+                let right = self.eval(right, line)?.compress();
                 Ok(Value::Bool {
                     b: !self.equal(&left, &right),
                 })
@@ -732,14 +734,14 @@ impl Interpreter {
             TokenType::AND => {
                 // short circuit
                 Ok(Value::Bool {
-                    b: left.truthy() && self.eval(right, line)?.truthy(),
+                    b: left.truthy() && self.eval(right, line)?.compress().truthy(),
                 })
             }
 
             TokenType::OR => {
                 // short circuit
                 Ok(Value::Bool {
-                    b: left.truthy() || self.eval(right, line)?.truthy(),
+                    b: left.truthy() || self.eval(right, line)?.compress().truthy(),
                 })
             }
 
@@ -764,11 +766,11 @@ impl Interpreter {
                 None => Ok(Value::Nil),
             },
             Var::TableIndex { prefixexp, exp } => {
-                let table_addr = self.eval(&prefixexp, line)?;
+                let table_addr = self.eval(&prefixexp, line)?.compress();
                 if let Value::Address { addr } = table_addr {
                     let table = self.dereference(&addr);
 
-                    let i = self.eval(&exp, line)?;
+                    let i = self.eval(&exp, line)?.compress();
 
                     if let Some(HeapObj::Table { table }) = table {
                         Ok(table.index(&i))
@@ -794,7 +796,7 @@ impl Interpreter {
         arguments: &ExpList,
         line: usize,
     ) -> Result<Value, RuntimeException> {
-        let func_name = self.eval(prefixexp, line)?;
+        let func_name = self.eval(prefixexp, line)?.compress();
         if let Value::Address { addr } = func_name {
             if let Some(HeapObj::Function {
                 parameters,
@@ -999,7 +1001,7 @@ impl Interpreter {
     fn call_print(&mut self, arguments: &ExpList, line: usize) -> Result<Value, RuntimeException> {
         let mut values = Vec::new();
         for arg in arguments.0.iter() {
-            values.push(self.eval(&arg, line)?);
+            values.push(self.eval(&arg, line)?.compress());
         }
 
         for value in values {
