@@ -2,8 +2,6 @@
 
 CS2612 PL&amp;Compilers Final Project: an interpreter for a lua subset.
 
-- `./Lua子集.pdf`: language specification discussed in email. 
-
 - `./syntax.md`: syntax for the Lua subset
 
 - `./doc.md`: usage for the Lua subset
