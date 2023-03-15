@@ -1,6 +1,6 @@
 ### Lua Subset Grammar
 
-```
+```lua
 block           ::=     {stmt} [retstat]
 stmt            ::=     ';' |
                         varlist '=' explist |
